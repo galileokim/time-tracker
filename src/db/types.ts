@@ -1,0 +1,53 @@
+import type { ColumnType, Generated } from "kysely";
+
+export type Timestamp = ColumnType<Date, Date | string, Date | string>;
+
+export interface UsersTable {
+  id: string;
+  username: string;
+  display_name: string;
+  email: string;
+  password_hash: string;
+  avatar_url: string | null;
+  created_at: Generated<Timestamp>;
+}
+
+export interface CategoriesTable {
+  id: Generated<string>;
+  user_id: string;
+  name: string;
+  color_hex: Generated<string>;
+  created_at: Generated<Timestamp>;
+}
+
+export interface LogsTable {
+  id: Generated<string>;
+  user_id: string;
+  title: string;
+  notes: string | null;
+  started_at: Timestamp;
+  ended_at: Timestamp;
+  duration_seconds: Generated<number>;
+  visibility: Generated<"public" | "private" | "friends_only">;
+  idempotency_key: string;
+  created_at: Generated<Timestamp>;
+}
+
+export interface LogCategoriesTable {
+  log_id: string;
+  category_id: string;
+}
+
+export interface FollowsTable {
+  follower_id: string;
+  following_id: string;
+  created_at: Generated<Timestamp>;
+}
+
+export interface DatabaseSchema {
+  users: UsersTable;
+  categories: CategoriesTable;
+  logs: LogsTable;
+  log_categories: LogCategoriesTable;
+  follows: FollowsTable;
+}
