@@ -7,14 +7,25 @@
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test test/*.test.ts"
+    "test": "tsx --test test/*.test.ts",
+    "db:migrate": "node-pg-migrate up",
+    "db:rollback": "node-pg-migrate down"
+  },
+  "node-pg-migrate": {
+    "migrationsTable": "pgmigrations",
+    "migrationsSchema": "public",
+    "migrationsDir": "migrations"
   },
   "dependencies": {
     "fastify": "^5.12.1",
+    "kysely": "0.29.7",
+    "pg": "8.23.1",
     "zod": "^4.1.12"
   },
   "devDependencies": {
     "@types/node": "^26.0.0",
+    "@types/pg": "^8.23.1",
+    "node-pg-migrate": "9.0.0",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
   }
