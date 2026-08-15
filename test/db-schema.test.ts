@@ -26,6 +26,7 @@ test("schema migration creates all tracker tables and integrity constraints", ()
   assert.match(sql, /lower\(username\)/);
   assert.match(sql, /lower\(email\)/);
   assert.match(sql, /duration_seconds/);
+  assert.match(sql, /"expressionGenerated":"extract\(epoch from \(ended_at - started_at\)\)::integer"/);
   assert.match(sql, /ended_at >= started_at/);
   assert.match(sql, /"onDelete":"CASCADE"/);
   assert.match(sql, /follower_id <> following_id/);
