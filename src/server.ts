@@ -1,9 +1,9 @@
-import { buildApp } from "./app.js";
+import { buildConfiguredApp } from "./app.js";
 import { loadConfig } from "./config.js";
 
 try {
   const config = loadConfig();
-  const app = buildApp();
+  const app = buildConfiguredApp(config);
 
   await app.listen({ host: config.HOST, port: config.PORT });
 } catch (error) {
