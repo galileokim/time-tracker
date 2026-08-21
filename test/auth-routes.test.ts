@@ -52,7 +52,7 @@ test("authentication endpoints", async (t) => {
 
     const protectedResponse = await app.inject({
       method: "GET",
-      url: "/api/v1/auth/me",
+      url: "/api/v1/me",
       headers: { authorization: `Bearer ${accessToken}` },
     });
     assert.equal(protectedResponse.statusCode, 200);
@@ -60,7 +60,7 @@ test("authentication endpoints", async (t) => {
 
     const unauthorizedResponse = await app.inject({
       method: "GET",
-      url: "/api/v1/auth/me",
+      url: "/api/v1/me",
     });
     assert.equal(unauthorizedResponse.statusCode, 401);
   });
