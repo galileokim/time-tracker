@@ -1,5 +1,4 @@
-import jwtPlugin from "@fastify/jwt";
-import type { FastifyPluginAsync, FastifyRequest } from "fastify";
+import type { FastifyPluginAsync } from "fastify";
 import type { Database } from "../db/client.js";
 import type { AppConfig } from "../config.js";
 import { loginSchema, registerSchema } from "./schemas.js";
@@ -11,11 +10,6 @@ export interface AuthRouteOptions {
 }
 
 export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, options) => {
-  await app.register(jwtPlugin, {
-    secret: options.config.JWT_SECRET,
-    sign: { expiresIn: options.config.JWT_EXPIRES_IN },
-  });
-
   const auth = new AuthService(
     options.db,
     {
@@ -66,13 +60,4 @@ export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, opti
       throw error;
     }
   });
-
-  app.get("/me", { preHandler: authenticate }, async (request) => {
-    const user = request.user as { sub: string; username: string };
-    return { user: { id: user.sub, username: user.username } };
-  });
 };
-
-async function authenticate(request: FastifyRequest): Promise<void> {
-  await request.jwtVerify();
-}
