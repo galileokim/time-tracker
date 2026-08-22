@@ -4,6 +4,7 @@ import { createDatabase, type Database } from "./db/client.js";
 import { authRoutes } from "./auth/routes.js";
 import { profileRoutes } from "./profile/routes.js";
 import jwtPlugin from "@fastify/jwt";
+import { logRoutes } from "./logs/routes.js";
 
 export interface AppDependencies {
   logger?: boolean;
@@ -28,6 +29,9 @@ export function buildApp({ logger = true, config, db }: AppDependencies = {}): F
         db,
       });
       await authenticatedApi.register(profileRoutes, {
+        db,
+      });
+      await authenticatedApi.register(logRoutes, {
         db,
       });
     }, { prefix: "/api/v1" });
