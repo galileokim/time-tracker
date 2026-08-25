@@ -5,6 +5,7 @@ import { authRoutes } from "./auth/routes.js";
 import { profileRoutes } from "./profile/routes.js";
 import jwtPlugin from "@fastify/jwt";
 import { logRoutes } from "./logs/routes.js";
+import { socialRoutes } from "./social/routes.js";
 
 export interface AppDependencies {
   logger?: boolean;
@@ -32,6 +33,9 @@ export function buildApp({ logger = true, config, db }: AppDependencies = {}): F
         db,
       });
       await authenticatedApi.register(logRoutes, {
+        db,
+      });
+      await authenticatedApi.register(socialRoutes, {
         db,
       });
     }, { prefix: "/api/v1" });
