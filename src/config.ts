@@ -8,6 +8,7 @@ const environmentSchema = z.object({
   REDIS_URL: z.string().url(),
   JWT_SECRET: z.string().min(32),
   JWT_EXPIRES_IN: z.string().default("15m"),
+  FEED_CACHE_MAX_AGE_SECONDS: z.coerce.number().int().min(60).max(2592000).default(604800),
 });
 
 export type AppConfig = z.infer<typeof environmentSchema>;
