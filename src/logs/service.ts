@@ -1,6 +1,10 @@
 import type { Database } from "../db/client.js";
 import type { CreateLogInput, LogReceipt } from "./schemas.js";
 
+export interface PublicLogPublisher {
+  addPublicLog(logId: string): Promise<void>;
+}
+
 export class CategoryOwnershipError extends Error {
   readonly statusCode = 400;
   readonly code = "INVALID_CATEGORIES";
@@ -22,11 +26,14 @@ export class LogConflictError extends Error {
 }
 
 export class LogService {
-  constructor(private readonly db: Database) {}
+  constructor(
+    private readonly db: Database,
+    private readonly publisher?: PublicLogPublisher,
+  ) {}
 
   async create(userId: string, input: CreateLogInput): Promise<LogReceipt> {
     try {
-      return await this.db.transaction().execute(async (transaction) => {
+      const result = await this.db.transaction().execute(async (transaction) => {
       const existing = await transaction
         .selectFrom("logs")
         .select(["id", "user_id", "idempotency_key", "title", "notes", "started_at", "ended_at", "visibility"])
@@ -97,6 +104,11 @@ export class LogService {
 
       return { id: log.id, idempotencyKey: input.idempotencyKey, created: true };
       });
+
+      if (result.created && input.visibility === "public") {
+        await this.publishSafely(result.id);
+      }
+      return result;
     } catch (error) {
       if (isUniqueViolation(error)) {
         const existing = await this.db
@@ -111,6 +123,14 @@ export class LogService {
         if (existing) throw new LogConflictError();
       }
       throw error;
+    }
+  }
+
+  private async publishSafely(logId: string): Promise<void> {
+    try {
+      await this.publisher?.addPublicLog(logId);
+    } catch {
+      return;
     }
   }
 

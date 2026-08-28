@@ -1,14 +1,22 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
+import type { RedisClient } from "../cache/redis.js";
+import { RedisFeedCache } from "../cache/feed-cache.js";
+import { FeedDistributor } from "../cache/feed-distributor.js";
 import type { Database } from "../db/client.js";
 import { createLogSchema } from "./schemas.js";
 import { CategoryOwnershipError, LogConflictError, LogService } from "./service.js";
 
 export interface LogRouteOptions {
   db: Database;
+  redis?: RedisClient;
+  feedCacheMaxAgeSeconds?: number;
 }
 
-export const logRoutes: FastifyPluginAsync<LogRouteOptions> = async (app, { db }) => {
-  const logs = new LogService(db);
+export const logRoutes: FastifyPluginAsync<LogRouteOptions> = async (app, { db, redis, feedCacheMaxAgeSeconds = 604800 }) => {
+  const publisher = redis
+    ? new FeedDistributor(db, new RedisFeedCache(redis), feedCacheMaxAgeSeconds)
+    : undefined;
+  const logs = new LogService(db, publisher);
   app.addHook("preHandler", authenticate);
 
   app.post("/logs", async (request, reply) => {
