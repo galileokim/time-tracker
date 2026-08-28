@@ -1,15 +1,17 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { Database } from "../db/client.js";
+import type { RedisClient } from "../cache/redis.js";
 import { feedQuerySchema, followUserSchema } from "./schemas.js";
 import { decodeCursor, FollowTargetNotFoundError, SelfFollowError, SocialService } from "./service.js";
 
 export interface SocialRouteOptions {
   db: Database;
+  redis?: RedisClient;
 }
 
-export const socialRoutes: FastifyPluginAsync<SocialRouteOptions> = async (app, { db }) => {
-  const social = new SocialService(db);
+export const socialRoutes: FastifyPluginAsync<SocialRouteOptions> = async (app, { db, redis }) => {
+  const social = new SocialService(db, redis);
   app.addHook("preHandler", authenticate);
 
   app.post("/follows", async (request, reply) => {

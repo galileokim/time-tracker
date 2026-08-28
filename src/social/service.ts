@@ -1,6 +1,8 @@
-import { sql } from "kysely";
 import type { Database } from "../db/client.js";
-import type { FeedCursor, FeedEntry, FeedPage, FeedQuery } from "./schemas.js";
+import type { RedisClient } from "../cache/redis.js";
+import { RedisFeedCache } from "../cache/feed-cache.js";
+import type { FeedCursor, FeedPage, FeedQuery } from "./schemas.js";
+import { getFeedFromDatabase } from "./feed-query.js";
 
 export class FollowTargetNotFoundError extends Error {
   readonly statusCode = 404;
@@ -23,7 +25,11 @@ export class SelfFollowError extends Error {
 }
 
 export class SocialService {
-  constructor(private readonly db: Database) {}
+  private readonly cache: RedisFeedCache | undefined;
+
+  constructor(private readonly db: Database, redis?: RedisClient) {
+    this.cache = redis ? new RedisFeedCache(redis) : undefined;
+  }
 
   async follow(followerId: string, followingId: string): Promise<void> {
     if (followerId === followingId) throw new SelfFollowError();
@@ -40,6 +46,12 @@ export class SocialService {
       .values({ follower_id: followerId, following_id: followingId })
       .onConflict((conflict) => conflict.columns(["follower_id", "following_id"]).doNothing())
       .execute();
+
+    try {
+      await this.backfillFollower(followerId, followingId);
+    } catch {
+      return;
+    }
   }
 
   async unfollow(followerId: string, followingId: string): Promise<void> {
@@ -48,6 +60,17 @@ export class SocialService {
       .where("follower_id", "=", followerId)
       .where("following_id", "=", followingId)
       .execute();
+
+    try {
+      const logs = await this.db
+        .selectFrom("logs")
+        .select("id")
+        .where("user_id", "=", followingId)
+        .execute();
+      await this.cache?.removeLogs(logs.map((log) => log.id), [followerId]);
+    } catch {
+      return;
+    }
   }
 
   async listFollowing(userId: string) {
@@ -68,129 +91,59 @@ export class SocialService {
 
   async getFeedPage(userId: string, query: FeedQuery): Promise<FeedPage> {
     const cursor = query.cursor ? decodeCursor(query.cursor) : undefined;
-    const baseQuery = this.db
-      .selectFrom("logs")
-      .innerJoin("users as author", "author.id", "logs.user_id")
-      .leftJoin("follows as viewer_follow", (join) =>
-        join.onRef("viewer_follow.following_id", "=", "logs.user_id")
-          .on("viewer_follow.follower_id", "=", userId),
-      )
-      .leftJoin("follows as author_follow", (join) =>
-        join.onRef("author_follow.follower_id", "=", "logs.user_id")
-          .on("author_follow.following_id", "=", userId),
-      )
-      .where((expression) => expression.or([
-        expression("logs.user_id", "=", userId),
-        expression.and([
-          expression("logs.visibility", "=", "public"),
-          expression.or([
-            expression("logs.user_id", "=", userId),
-            expression("viewer_follow.follower_id", "is not", null),
-          ]),
-        ]),
-        expression.and([
-          expression("logs.visibility", "=", "friends_only"),
-          expression("author_follow.following_id", "is not", null),
-        ]),
-      ]));
-
-    const pagedQuery = cursor
-      ? baseQuery.where((expression) => expression.or([
-          expression("logs.created_at", "<", cursor.createdAt as never),
-          expression.and([
-            expression("logs.created_at", "=", cursor.createdAt as never),
-            expression("logs.id", "<", cursor.id),
-          ]),
-        ]))
-      : baseQuery;
-
-    const rows = await pagedQuery
-      .select([
-        "logs.id",
-        "logs.user_id",
-        "logs.title",
-        "logs.notes",
-        "logs.started_at",
-        "logs.ended_at",
-        "logs.duration_seconds",
-        "logs.visibility",
-        "logs.created_at",
-        "author.username as author_username",
-        "author.display_name as author_display_name",
-        "author.avatar_url as author_avatar_url",
-      ])
-      .orderBy("logs.created_at", "desc")
-      .orderBy("logs.id", "desc")
-      .limit(query.limit + 1)
-      .execute();
-
-    const hasMore = rows.length > query.limit;
-    const pageRows = rows.slice(0, query.limit);
-    const logIds = pageRows.map((row) => row.id);
-    const categories = logIds.length === 0
-      ? []
-      : await this.db
-          .selectFrom("log_categories")
-          .innerJoin("categories", "categories.id", "log_categories.category_id")
-          .select([
-            "log_categories.log_id",
-            "categories.id",
-            "categories.name",
-            "categories.color_hex",
-          ])
-          .where("log_categories.log_id", "in", logIds)
-          .execute();
-
-    const categoriesByLog = new Map<string, FeedEntry["categories"]>();
-    for (const category of categories) {
-      const existing = categoriesByLog.get(category.log_id) ?? [];
-      existing.push({ id: category.id, name: category.name, colorHex: category.color_hex });
-      categoriesByLog.set(category.log_id, existing);
+    const candidates = await this.readCandidates(userId, cursor, query.limit);
+    if (candidates) {
+      const cachedPage = await getFeedFromDatabase(this.db, userId, query, candidates);
+      if (cachedPage.rows.length >= Math.min(query.limit, candidates.length)) {
+        return pageFromRows(cachedPage.rows, cachedPage.hasMore || candidates.length > query.limit);
+      }
     }
 
-    const items = pageRows.map((row): FeedEntry => ({
-      id: row.id,
-      title: row.title,
-      notes: row.notes,
-      startedAt: toDate(row.started_at),
-      endedAt: toDate(row.ended_at),
-      durationSeconds: row.duration_seconds,
-      visibility: row.visibility,
-      createdAt: toDate(row.created_at),
-      author: {
-        id: row.user_id,
-        username: row.author_username,
-        displayName: row.author_display_name,
-        avatarUrl: row.author_avatar_url,
-      },
-      categories: categoriesByLog.get(row.id) ?? [],
-    }));
-
-    const lastItem = pageRows.at(-1);
-    return {
-      items,
-      nextCursor: hasMore && lastItem
-        ? encodeCursor({ createdAt: toDate(lastItem.created_at).toISOString(), id: lastItem.id })
-        : null,
-    };
+    const authoritativePage = await getFeedFromDatabase(this.db, userId, query);
+    if (this.cache) await this.cachePage(userId, authoritativePage.rows);
+    return pageFromRows(authoritativePage.rows, authoritativePage.hasMore);
   }
-}
 
-export function isVisibleToViewer(
-  visibility: "public" | "private" | "friends_only",
-  ownerId: string,
-  viewerId: string,
-  viewerFollowsOwner: boolean,
-  ownerFollowsViewer: boolean,
-): boolean {
-  if (ownerId === viewerId) return true;
-  if (visibility === "public") return viewerFollowsOwner;
-  if (visibility === "friends_only") return ownerFollowsViewer;
-  return false;
-}
+  private async readCandidates(userId: string, cursor: FeedCursor | undefined, limit: number): Promise<string[] | undefined> {
+    if (!this.cache) return undefined;
 
-export function encodeCursor(cursor: FeedCursor): string {
-  return Buffer.from(JSON.stringify(cursor)).toString("base64url");
+    try {
+      const entries = await this.cache.getCandidates(
+        userId,
+        cursor ? { id: cursor.id, createdAt: new Date(cursor.createdAt) } : undefined,
+        limit + 1,
+      );
+      return entries?.map((entry) => entry.id);
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async cachePage(userId: string, rows: Array<{ id: string; createdAt: Date }>): Promise<void> {
+    try {
+      await this.cache?.addForFollowers(
+        [userId],
+        rows.map((row) => ({ id: row.id, createdAt: row.createdAt })),
+        604800,
+      );
+    } catch {
+      return;
+    }
+  }
+
+  private async backfillFollower(followerId: string, authorId: string): Promise<void> {
+    const logs = await this.db
+      .selectFrom("logs")
+      .select(["id", "created_at"])
+      .where("user_id", "=", authorId)
+      .where("visibility", "=", "public")
+      .execute();
+    await this.cache?.addForFollowers(
+      [followerId],
+      logs.map((log) => ({ id: log.id, createdAt: toDate(log.created_at) })),
+      604800,
+    );
+  }
 }
 
 export function decodeCursor(value: string): FeedCursor {
@@ -209,6 +162,20 @@ export function decodeCursor(value: string): FeedCursor {
   } catch {
     throw new Error("Invalid feed cursor");
   }
+}
+
+function encodeCursor(cursor: FeedCursor): string {
+  return Buffer.from(JSON.stringify(cursor)).toString("base64url");
+}
+
+function pageFromRows(rows: Awaited<ReturnType<typeof getFeedFromDatabase>>["rows"], hasMore: boolean): FeedPage {
+  const last = rows.at(-1);
+  return {
+    items: rows,
+    nextCursor: hasMore && last
+      ? encodeCursor({ createdAt: last.createdAt.toISOString(), id: last.id })
+      : null,
+  };
 }
 
 function toDate(value: Date | string | object): Date {
