@@ -6,14 +6,16 @@ import { profileRoutes } from "./profile/routes.js";
 import jwtPlugin from "@fastify/jwt";
 import { logRoutes } from "./logs/routes.js";
 import { socialRoutes } from "./social/routes.js";
+import { createRedisClient, type RedisClient } from "./cache/redis.js";
 
 export interface AppDependencies {
   logger?: boolean;
   config?: AppConfig;
   db?: Database;
+  redis?: RedisClient;
 }
 
-export function buildApp({ logger = true, config, db }: AppDependencies = {}): FastifyInstance {
+export function buildApp({ logger = true, config, db, redis }: AppDependencies = {}): FastifyInstance {
   const app = Fastify({ logger });
 
   app.get("/health", async () => ({ status: "ok" }));
@@ -34,9 +36,12 @@ export function buildApp({ logger = true, config, db }: AppDependencies = {}): F
       });
       await authenticatedApi.register(logRoutes, {
         db,
+        redis,
+        feedCacheMaxAgeSeconds: config.FEED_CACHE_MAX_AGE_SECONDS,
       });
       await authenticatedApi.register(socialRoutes, {
         db,
+        redis,
       });
     }, { prefix: "/api/v1" });
   }
@@ -44,12 +49,13 @@ export function buildApp({ logger = true, config, db }: AppDependencies = {}): F
   return app;
 }
 
-export function buildConfiguredApp(config: AppConfig): FastifyInstance {
+export async function buildConfiguredApp(config: AppConfig): Promise<FastifyInstance> {
   const database = createDatabase(config);
-  const app = buildApp({ config, db: database.db });
+  const redis = await createRedisClient(config);
+  const app = buildApp({ config, db: database.db, redis });
 
   app.addHook("onClose", async () => {
-    await database.close();
+    await Promise.all([database.close(), redis.quit()]);
   });
 
   return app;

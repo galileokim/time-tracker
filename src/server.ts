@@ -3,7 +3,7 @@ import { loadConfig } from "./config.js";
 
 try {
   const config = loadConfig();
-  const app = buildConfiguredApp(config);
+  const app = await buildConfiguredApp(config);
 
   await app.listen({ host: config.HOST, port: config.PORT });
 } catch (error) {
