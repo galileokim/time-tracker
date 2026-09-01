@@ -1,0 +1,32 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 60;
+	objects = {
+		A10000000000000000000001 = {isa = PBXBuildFile; fileRef = B20000000000000000000001; };
+		A10000000000000000000002 = {isa = PBXBuildFile; fileRef = B20000000000000000000002; };
+		A10000000000000000000003 = {isa = PBXBuildFile; fileRef = B20000000000000000000003; };
+		A10000000000000000000004 = {isa = PBXBuildFile; fileRef = B20000000000000000000004; };
+		B20000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/TimeTrackerApp/TimeTrackerApp.swift; sourceTree = SOURCE_ROOT; };
+		B20000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/TimeTrackerCore/TimerEngine.swift; sourceTree = SOURCE_ROOT; };
+		B20000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/TimeTrackerCore/TimerModels.swift; sourceTree = SOURCE_ROOT; };
+		B20000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/TimeTrackerCore/TimerStore.swift; sourceTree = SOURCE_ROOT; };
+		B20000000000000000000005 = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TimeTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C10000000000000000000001 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		C20000000000000000000001 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A10000000000000000000004,); runOnlyForDeploymentPostprocessing = 0; };
+		C30000000000000000000001 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		D10000000000000000000001 = {isa = PBXGroup; children = (D10000000000000000000002, D10000000000000000000003,); sourceTree = "<group>"; };
+		D10000000000000000000002 = {isa = PBXGroup; children = (B20000000000000000000001, B20000000000000000000002, B20000000000000000000003, B20000000000000000000004,); path = .; sourceTree = SOURCE_ROOT; };
+		D10000000000000000000003 = {isa = PBXGroup; children = (B20000000000000000000005,); name = Products; sourceTree = "<group>"; };
+		E10000000000000000000001 = {isa = PBXNativeTarget; buildConfigurationList = F40000000000000000000002; buildPhases = (C20000000000000000000001, C10000000000000000000001, C30000000000000000000001,); buildRules = (); dependencies = (); name = TimeTracker; productName = TimeTracker; productReference = B20000000000000000000005; productType = "com.apple.product-type.application"; };
+		E10000000000000000000002 = {isa = PBXProject; attributes = {BuildIndependentTargetsInParallel = 1; LastUpgradeCheck = 2660; TargetAttributes = {E10000000000000000000001 = {CreatedOnToolsVersion = 26.6; }; }; }; buildConfigurationList = F40000000000000000000001; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base,); mainGroup = D10000000000000000000001; productRefGroup = D10000000000000000000003; projectDirPath = ""; projectRoot = ""; targets = (E10000000000000000000001,); };
+		F10000000000000000000001 = {isa = XCBuildConfiguration; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ENABLE_MODULES = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; SDKROOT = iphoneos; SWIFT_VERSION = 6.0; }; name = Debug; };
+		F10000000000000000000002 = {isa = XCBuildConfiguration; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ENABLE_MODULES = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; SDKROOT = iphoneos; SWIFT_VERSION = 6.0; }; name = Release; };
+		F10000000000000000000003 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGNING_ALLOWED = NO; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = "Time Tracker"; INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity"; IPHONEOS_DEPLOYMENT_TARGET = 17.0; PRODUCT_BUNDLE_IDENTIFIER = com.timetracker.app; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Debug; };
+		F10000000000000000000004 = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGNING_ALLOWED = NO; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = "Time Tracker"; INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity"; IPHONEOS_DEPLOYMENT_TARGET = 17.0; PRODUCT_BUNDLE_IDENTIFIER = com.timetracker.app; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Release; };
+		F40000000000000000000001 = {isa = XCConfigurationList; buildConfigurations = (F10000000000000000000001, F10000000000000000000002,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		F40000000000000000000002 = {isa = XCConfigurationList; buildConfigurations = (F10000000000000000000003, F10000000000000000000004,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+	};
+	rootObject = E10000000000000000000002;
+}
