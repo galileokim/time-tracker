@@ -4,16 +4,21 @@ import SwiftUI
 @main
 struct TimeTrackerApp: App {
     private let container: ModelContainer
+    private let api: TrackerAPIClient
+    private let tokenStore: KeychainTokenStore
 
     init() {
         let schema = Schema([StoredTimer.self, StoredActivityLog.self])
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
         container = try! ModelContainer(for: schema, configurations: [configuration])
+        let apiURL = URL(string: ProcessInfo.processInfo.environment["TRACKER_API_URL"] ?? "http://localhost:3000")!
+        api = TrackerAPIClient(baseURL: apiURL)
+        tokenStore = KeychainTokenStore()
     }
 
     var body: some Scene {
         WindowGroup {
-            TimerHomeView()
+            AppRootView(api: api, tokenStore: tokenStore)
                 .modelContainer(container)
         }
     }
@@ -76,10 +81,178 @@ final class TimerHomeModel {
     }
 }
 
+@MainActor
+@Observable
+final class AuthSession {
+    private let api: TrackerAPIClient
+    private let tokenStore: KeychainTokenStore
+    private(set) var accessToken: String?
+    private(set) var user: APIUser?
+    private(set) var isLoading = false
+    var errorMessage: String?
+
+    init(api: TrackerAPIClient, tokenStore: KeychainTokenStore) {
+        self.api = api
+        self.tokenStore = tokenStore
+        do {
+            self.accessToken = try tokenStore.read()
+        } catch {
+            self.accessToken = nil
+            self.errorMessage = "Could not read the saved session. Sign in again."
+        }
+    }
+
+    func login(username: String, password: String) async {
+        await authenticate {
+            let tokens = try await api.login(username: username, password: password)
+            try await accept(tokens.accessToken)
+        }
+    }
+
+    func register(username: String, displayName: String, email: String, password: String) async {
+        await authenticate {
+            _ = try await api.register(username: username, displayName: displayName, email: email, password: password)
+            let tokens = try await api.login(username: username, password: password)
+            try await accept(tokens.accessToken)
+        }
+    }
+
+    func signOut() {
+        do {
+            try tokenStore.delete()
+            accessToken = nil
+            user = nil
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func restoreSession() async {
+        guard let accessToken else { return }
+        do {
+            user = try await api.profile(accessToken: accessToken)
+        } catch {
+            signOut()
+            errorMessage = "Your session expired. Sign in again."
+        }
+    }
+
+    private func accept(_ token: String) async throws {
+        do {
+            let user = try await api.profile(accessToken: token)
+            try tokenStore.save(token)
+            accessToken = token
+            self.user = user
+        } catch {
+            try? tokenStore.delete()
+            accessToken = nil
+            user = nil
+            throw error
+        }
+    }
+
+    private func authenticate(_ operation: () async throws -> Void) async {
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        do {
+            try await operation()
+        } catch let error as APIClientError {
+            switch error {
+            case .server(_, let code): errorMessage = code == "INVALID_CREDENTIALS" ? "Username or password is incorrect." : "Sign-in failed (\(code))."
+            case .invalidResponse, .decoding: errorMessage = "The server returned an unreadable response."
+            }
+        } catch {
+            errorMessage = "Could not connect. Check your network and try again."
+        }
+    }
+}
+
+struct AppRootView: View {
+    let api: TrackerAPIClient
+    let tokenStore: KeychainTokenStore
+    @State private var session: AuthSession?
+
+    var body: some View {
+        Group {
+            if let session {
+                if session.accessToken != nil && session.user != nil {
+                    TimerHomeView(onSignOut: session.signOut)
+                } else if session.accessToken != nil {
+                    ProgressView("Restoring your session")
+                        .task { await session.restoreSession() }
+                } else {
+                    AuthenticationView(session: session)
+                }
+            } else {
+                ProgressView("Opening Time Tracker")
+                    .task { session = AuthSession(api: api, tokenStore: tokenStore) }
+            }
+        }
+    }
+}
+
+struct AuthenticationView: View {
+    let session: AuthSession
+    @State private var isRegistering = false
+    @State private var username = ""
+    @State private var displayName = ""
+    @State private var email = ""
+    @State private var password = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Account") {
+                    TextField("Username", text: $username)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    if isRegistering {
+                        TextField("Display name", text: $displayName)
+                        TextField("Email", text: $email)
+                            .textInputAutocapitalization(.never)
+                            .keyboardType(.emailAddress)
+                            .autocorrectionDisabled()
+                    }
+                    SecureField("Password", text: $password)
+                }
+                Section {
+                    Button(isRegistering ? "Create account" : "Sign in") {
+                        Task {
+                            if isRegistering {
+                                await session.register(username: username, displayName: displayName, email: email, password: password)
+                            } else {
+                                await session.login(username: username, password: password)
+                            }
+                        }
+                    }
+                    .disabled(session.isLoading)
+
+                    Button(isRegistering ? "I already have an account" : "Create an account") {
+                        isRegistering.toggle()
+                        session.errorMessage = nil
+                    }
+                    .font(.footnote)
+                }
+                if session.isLoading {
+                    ProgressView("Connecting")
+                }
+                if let errorMessage = session.errorMessage {
+                    Text(errorMessage)
+                        .foregroundStyle(.red)
+                }
+            }
+            .navigationTitle(isRegistering ? "Create account" : "Welcome back")
+        }
+    }
+}
+
 struct TimerHomeView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var model: TimerHomeModel?
     @State private var now = Date.now
+    var onSignOut: () -> Void = {}
 
     var body: some View {
         Group {
@@ -104,9 +277,13 @@ struct TimerHomeView: View {
     @ViewBuilder
     private func content(_ model: TimerHomeModel) -> some View {
         VStack(spacing: 24) {
-            Text("Time Tracker")
-                .font(.largeTitle.weight(.semibold))
-                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack {
+                Text("Time Tracker")
+                    .font(.largeTitle.weight(.semibold))
+                Spacer()
+                Button("Sign out", action: onSignOut)
+                    .font(.subheadline)
+            }
 
             if let timer = model.runningTimer {
                 VStack(alignment: .leading, spacing: 12) {
