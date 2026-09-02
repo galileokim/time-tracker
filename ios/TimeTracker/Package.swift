@@ -8,7 +8,7 @@ let package = Package(
         .library(name: "TimeTrackerCore", targets: ["TimeTrackerCore"]),
     ],
     targets: [
-        .target(name: "TimeTrackerCore"),
+        .target(name: "TimeTrackerCore", sources: ["TimerEngine.swift", "TimerModels.swift", "TimerStore.swift", "APIClient.swift", "TokenStore.swift"]),
         .testTarget(name: "TimeTrackerCoreTests", dependencies: ["TimeTrackerCore"]),
     ]
 )
