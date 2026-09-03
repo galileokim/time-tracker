@@ -115,6 +115,7 @@ public protocol TimerStoreProtocol {
     func stop(timerID: UUID, endedAt: Date) throws -> LocalActivityLog
     func currentTimer() throws -> RunningTimer?
     func pendingLogs() throws -> [LocalActivityLog]
+    func markSyncing(idempotencyKey: UUID) throws
     func updatePendingLog(idempotencyKey: UUID, title: String, notes: String?, categoryIDs: [UUID], visibility: ActivityVisibility) throws
     func markSynced(idempotencyKey: UUID, serverID: UUID) throws
     func recordAttempt(idempotencyKey: UUID, failure: String) throws
@@ -189,6 +190,14 @@ public final class SwiftDataTimerStore: TimerStoreProtocol {
             }
             return log
         }
+    }
+
+    public func markSyncing(idempotencyKey: UUID) throws {
+        guard let stored = try storedLog(idempotencyKey: idempotencyKey), stored.syncStateRawValue == LocalSyncState.pending.rawValue else {
+            throw TimerStoreError.invalidStoredLog
+        }
+        stored.syncStateRawValue = LocalSyncState.syncing.rawValue
+        try modelContext.save()
     }
 
     public func updatePendingLog(
