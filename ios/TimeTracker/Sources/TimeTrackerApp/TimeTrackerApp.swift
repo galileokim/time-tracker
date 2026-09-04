@@ -1,5 +1,6 @@
 import SwiftData
 import SwiftUI
+import Network
 
 @main
 struct TimeTrackerApp: App {
@@ -28,14 +29,19 @@ struct TimeTrackerApp: App {
 @Observable
 final class TimerHomeModel {
     private let modelContext: ModelContext
+    private let api: TrackerAPIClient
     private let engine = TimerEngine()
+    private let tokenProvider: @Sendable () async -> String?
     private(set) var runningTimer: RunningTimer?
     private(set) var pendingLogCount = 0
+    private(set) var syncInProgress = false
     var title = ""
     var errorMessage: String?
 
-    init(modelContext: ModelContext) {
+    init(modelContext: ModelContext, api: TrackerAPIClient, tokenProvider: @escaping @Sendable () async -> String?) {
         self.modelContext = modelContext
+        self.api = api
+        self.tokenProvider = tokenProvider
         refresh()
     }
 
@@ -65,6 +71,7 @@ final class TimerHomeModel {
             try modelContext.save()
             refresh()
             errorMessage = nil
+            Task { await synchronize() }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -73,10 +80,24 @@ final class TimerHomeModel {
     func refresh() {
         do {
             runningTimer = try modelContext.fetch(FetchDescriptor<StoredTimer>(sortBy: [SortDescriptor(\.startedAt)])).first?.runningTimer
-            pendingLogCount = try modelContext.fetchCount(FetchDescriptor<StoredActivityLog>(predicate: #Predicate { $0.syncStateRawValue == "pending" }))
+            pendingLogCount = try modelContext.fetchCount(FetchDescriptor<StoredActivityLog>(predicate: #Predicate { $0.syncStateRawValue == "pending" || $0.syncStateRawValue == "syncing" }))
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    func synchronize() async {
+        guard !syncInProgress, let token = await tokenProvider() else { return }
+        syncInProgress = true
+        defer { syncInProgress = false }
+        do {
+            let store = SwiftDataTimerStore(modelContext: modelContext)
+            let worker = OfflineSyncWorker(store: store, api: api) { token }
+            _ = try await worker.synchronize()
+            refresh()
+        } catch {
+            errorMessage = "Sync could not start. Your logs remain saved on this device."
         }
     }
 }
@@ -177,8 +198,8 @@ struct AppRootView: View {
     var body: some View {
         Group {
             if let session {
-                if session.accessToken != nil && session.user != nil {
-                    TimerHomeView(onSignOut: session.signOut)
+                if let token = session.accessToken, session.user != nil {
+                    TimerHomeView(api: api, token: token, onSignOut: session.signOut)
                 } else if session.accessToken != nil {
                     ProgressView("Restoring your session")
                         .task { await session.restoreSession() }
@@ -250,8 +271,11 @@ struct AuthenticationView: View {
 
 struct TimerHomeView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
     @State private var model: TimerHomeModel?
     @State private var now = Date.now
+    let api: TrackerAPIClient
+    let token: String
     var onSignOut: () -> Void = {}
 
     var body: some View {
@@ -260,7 +284,11 @@ struct TimerHomeView: View {
                 content(model)
             } else {
                 ProgressView("Opening your timer")
-                    .task { model = TimerHomeModel(modelContext: modelContext) }
+                    .task {
+                        let timerModel = TimerHomeModel(modelContext: modelContext, api: api) { token }
+                        model = timerModel
+                        await timerModel.synchronize()
+                    }
             }
         }
         .padding(24)
@@ -270,6 +298,11 @@ struct TimerHomeView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
                 now = .now
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                Task { await model?.synchronize() }
             }
         }
     }
@@ -318,9 +351,15 @@ struct TimerHomeView: View {
             }
 
             if model.pendingLogCount > 0 {
-                Text("\(model.pendingLogCount) logs waiting to sync")
-                    .font(.subheadline)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack {
+                    Text("\(model.pendingLogCount) logs waiting to sync")
+                    Spacer()
+                    Button(model.syncInProgress ? "Syncing" : "Sync now") {
+                        Task { await model.synchronize() }
+                    }
+                    .disabled(model.syncInProgress)
+                }
+                .font(.subheadline)
             }
 
             if let errorMessage = model.errorMessage {
