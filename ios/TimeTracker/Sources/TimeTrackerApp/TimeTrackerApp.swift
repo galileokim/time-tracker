@@ -31,16 +31,24 @@ final class TimerHomeModel {
     private let modelContext: ModelContext
     private let api: TrackerAPIClient
     private let engine = TimerEngine()
+    private let liveActivity: LiveActivityController
     private let tokenProvider: @Sendable () async -> String?
     private(set) var runningTimer: RunningTimer?
     private(set) var pendingLogCount = 0
     private(set) var syncInProgress = false
+    private(set) var activityState: TimerActivityAttributes.ContentState?
     var title = ""
     var errorMessage: String?
 
-    init(modelContext: ModelContext, api: TrackerAPIClient, tokenProvider: @escaping @Sendable () async -> String?) {
+    init(
+        modelContext: ModelContext,
+        api: TrackerAPIClient,
+        liveActivity: LiveActivityController,
+        tokenProvider: @escaping @Sendable () async -> String?
+    ) {
         self.modelContext = modelContext
         self.api = api
+        self.liveActivity = liveActivity
         self.tokenProvider = tokenProvider
         refresh()
     }
@@ -53,6 +61,10 @@ final class TimerHomeModel {
             runningTimer = timer
             title = ""
             errorMessage = nil
+            Task {
+                await liveActivity.start(for: timer)
+                activityState = liveActivity.currentActivityState()
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -71,7 +83,11 @@ final class TimerHomeModel {
             try modelContext.save()
             refresh()
             errorMessage = nil
-            Task { await synchronize() }
+            Task {
+                await liveActivity.end(timerID: timerID)
+                activityState = nil
+                await synchronize()
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -84,6 +100,10 @@ final class TimerHomeModel {
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
+        }
+        Task {
+            await liveActivity.restoreRunningTimer(runningTimer)
+            activityState = liveActivity.currentActivityState()
         }
     }
 
@@ -274,6 +294,7 @@ struct TimerHomeView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var model: TimerHomeModel?
     @State private var now = Date.now
+    @State private var liveActivity = LiveActivityController()
     let api: TrackerAPIClient
     let token: String
     var onSignOut: () -> Void = {}
@@ -285,7 +306,7 @@ struct TimerHomeView: View {
             } else {
                 ProgressView("Opening your timer")
                     .task {
-                        let timerModel = TimerHomeModel(modelContext: modelContext, api: api) { token }
+                        let timerModel = TimerHomeModel(modelContext: modelContext, api: api, liveActivity: liveActivity) { token }
                         model = timerModel
                         await timerModel.synchronize()
                     }
@@ -348,6 +369,11 @@ struct TimerHomeView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(model.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+
+            if let state = model.activityState {
+                LiveTimerLockScreenView(state: state)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
             }
 
             if model.pendingLogCount > 0 {
