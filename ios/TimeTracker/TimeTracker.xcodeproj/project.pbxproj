@@ -11,6 +11,8 @@
 		A10000000000000000000004 /* TimerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000004; };
 		A10000000000000000000005 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000005; };
 		A10000000000000000000006 /* TokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000006; };
+		A10000000000000000000007 /* SyncWorker.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000007; };
+		A10000000000000000000008 /* ConnectivityMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000008; };
 /* End PBXBuildFile section */
 /* Begin PBXFileReference section */
 		B20000000000000000000001 /* TimeTrackerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/TimeTrackerApp/TimeTrackerApp.swift; sourceTree = SOURCE_ROOT; };
@@ -19,18 +21,20 @@
 		B20000000000000000000004 /* TimerStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/TimeTrackerCore/TimerStore.swift; sourceTree = SOURCE_ROOT; };
 		B20000000000000000000005 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/TimeTrackerCore/APIClient.swift; sourceTree = SOURCE_ROOT; };
 		B20000000000000000000006 /* TokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/TimeTrackerCore/TokenStore.swift; sourceTree = SOURCE_ROOT; };
-		B20000000000000000000007 /* TimeTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TimeTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B20000000000000000000007 /* SyncWorker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/TimeTrackerCore/SyncWorker.swift; sourceTree = SOURCE_ROOT; };
+		B20000000000000000000008 /* ConnectivityMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/TimeTrackerCore/ConnectivityMonitor.swift; sourceTree = SOURCE_ROOT; };
+		B20000000000000000000009 /* TimeTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TimeTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 /* Begin PBXFrameworksBuildPhase section */
 		C10000000000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 /* Begin PBXGroup section */
 		D10000000000000000000001 = {isa = PBXGroup; children = (D10000000000000000000002, D10000000000000000000003,); sourceTree = "<group>"; };
-		D10000000000000000000002 /* Sources */ = {isa = PBXGroup; children = (B20000000000000000000001, B20000000000000000000002, B20000000000000000000003, B20000000000000000000004, B20000000000000000000005, B20000000000000000000006,); path = .; sourceTree = SOURCE_ROOT; };
-		D10000000000000000000003 /* Products */ = {isa = PBXGroup; children = (B20000000000000000000007,); name = Products; sourceTree = "<group>"; };
+		D10000000000000000000002 /* Sources */ = {isa = PBXGroup; children = (B20000000000000000000001, B20000000000000000000002, B20000000000000000000003, B20000000000000000000004, B20000000000000000000005, B20000000000000000000006, B20000000000000000000007, B20000000000000000000008,); path = .; sourceTree = SOURCE_ROOT; };
+		D10000000000000000000003 /* Products */ = {isa = PBXGroup; children = (B20000000000000000000009,); name = Products; sourceTree = "<group>"; };
 /* End PBXGroup section */
 /* Begin PBXNativeTarget section */
-		E10000000000000000000001 /* TimeTracker */ = {isa = PBXNativeTarget; buildConfigurationList = F40000000000000000000002; buildPhases = (C20000000000000000000001, C10000000000000000000001, C30000000000000000000001,); buildRules = (); dependencies = (); name = TimeTracker; productName = TimeTracker; productReference = B20000000000000000000007; productType = "com.apple.product-type.application"; };
+		E10000000000000000000001 /* TimeTracker */ = {isa = PBXNativeTarget; buildConfigurationList = F40000000000000000000002; buildPhases = (C20000000000000000000001, C10000000000000000000001, C30000000000000000000001,); buildRules = (); dependencies = (); name = TimeTracker; productName = TimeTracker; productReference = B20000000000000000000009; productType = "com.apple.product-type.application"; };
 /* End PBXNativeTarget section */
 /* Begin PBXProject section */
 		E10000000000000000000002 /* Project */ = {isa = PBXProject; attributes = {BuildIndependentTargetsInParallel = 1; LastUpgradeCheck = 2660; TargetAttributes = {E10000000000000000000001 = {CreatedOnToolsVersion = 26.6; }; }; }; buildConfigurationList = F40000000000000000000001; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base,); mainGroup = D10000000000000000000001; productRefGroup = D10000000000000000000003; projectDirPath = ""; projectRoot = ""; targets = (E10000000000000000000001,); };
@@ -39,7 +43,7 @@
 		C30000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 /* Begin PBXSourcesBuildPhase section */
-		C20000000000000000000001 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A10000000000000000000004, A10000000000000000000005, A10000000000000000000006,); runOnlyForDeploymentPostprocessing = 0; };
+		C20000000000000000000001 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A10000000000000000000004, A10000000000000000000005, A10000000000000000000006, A10000000000000000000007, A10000000000000000000008,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 /* Begin XCBuildConfiguration section */
 		F50000000000000000000001 /* Project Debug */ = {isa = XCBuildConfiguration; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ENABLE_MODULES = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; SDKROOT = iphoneos; SWIFT_VERSION = 6.0; }; name = Debug; };
