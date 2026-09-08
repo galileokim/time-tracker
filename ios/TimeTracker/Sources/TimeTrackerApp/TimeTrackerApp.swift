@@ -219,7 +219,7 @@ struct AppRootView: View {
         Group {
             if let session {
                 if let token = session.accessToken, session.user != nil {
-                    TimerHomeView(api: api, token: token, onSignOut: session.signOut)
+                    TimerHomeView(api: api, token: token, user: session.user!, onSignOut: session.signOut)
                 } else if session.accessToken != nil {
                     ProgressView("Restoring your session")
                         .task { await session.restoreSession() }
@@ -297,6 +297,7 @@ struct TimerHomeView: View {
     @State private var liveActivity = LiveActivityController()
     let api: TrackerAPIClient
     let token: String
+    let user: APIUser
     var onSignOut: () -> Void = {}
 
     var body: some View {
@@ -330,14 +331,18 @@ struct TimerHomeView: View {
 
     @ViewBuilder
     private func content(_ model: TimerHomeModel) -> some View {
-        VStack(spacing: 24) {
-            HStack {
-                Text("Time Tracker")
-                    .font(.largeTitle.weight(.semibold))
-                Spacer()
-                Button("Sign out", action: onSignOut)
-                    .font(.subheadline)
-            }
+        NavigationStack {
+            VStack(spacing: 24) {
+                HStack {
+                    Text("Time Tracker")
+                        .font(.largeTitle.weight(.semibold))
+                    Spacer()
+                    NavigationLink("Profile") {
+                        ProfileAndCategoriesView(api: api, token: token, user: user)
+                    }
+                    Button("Sign out", action: onSignOut)
+                        .font(.subheadline)
+                }
 
             if let timer = model.runningTimer {
                 VStack(alignment: .leading, spacing: 12) {
@@ -394,7 +399,9 @@ struct TimerHomeView: View {
                     .foregroundStyle(.red)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Spacer(minLength: 0)
+                Spacer(minLength: 0)
+            }
+            .toolbar(.hidden, for: .navigationBar)
         }
     }
 }
