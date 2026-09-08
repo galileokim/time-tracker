@@ -110,6 +110,19 @@ public struct TrackerAPIClient: Sendable {
         }
     }
 
+    public func feedPage(accessToken: String, cursor: String? = nil, limit: Int = 20) async throws -> FeedPage {
+        guard (1...100).contains(limit) else { throw APIClientError.invalidResponse }
+        var components = URLComponents()
+        components.queryItems = [URLQueryItem(name: "limit", value: String(limit))]
+        if let cursor, !cursor.isEmpty {
+            components.queryItems?.append(URLQueryItem(name: "cursor", value: cursor))
+        }
+        guard let query = components.percentEncodedQuery else { throw APIClientError.invalidResponse }
+        var request = try makeBodylessRequest(path: "/api/v1/feed?\(query)", method: "GET")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        return try await send(request, as: FeedPage.self, expectedStatus: 200)
+    }
+
     public func createLog(_ log: LocalActivityLog, accessToken: String) async throws -> LogReceiptResponse {
         let payload = CreateLogPayload(
             idempotencyKey: log.idempotencyKey,
