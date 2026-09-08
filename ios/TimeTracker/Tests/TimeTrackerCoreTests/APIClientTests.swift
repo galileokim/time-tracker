@@ -46,6 +46,79 @@ struct APIClientTests {
         #expect(user.avatarUrl == nil)
     }
 
+    @Test func categoriesDecodesAuthenticatedResponse() async throws {
+        let categoryID = UUID()
+        let responseBody = Data("""
+        {"categories":[{"id":"\(categoryID)","name":"Writing","colorHex":"#345678","createdAt":"2026-02-08T12:00:00Z"}]}
+        """.utf8)
+        let session = stubbedSession { request in
+            #expect(request.url?.path == "/api/v1/categories")
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer access-token")
+            return response(body: responseBody, statusCode: 200)
+        }
+        let client = TrackerAPIClient(baseURL: URL(string: "https://tracker.example.test")!, session: session)
+
+        let categories = try await client.categories(accessToken: "access-token")
+
+        #expect(categories == [APICategory(id: categoryID, name: "Writing", colorHex: "#345678", createdAt: ISO8601DateFormatter().date(from: "2026-02-08T12:00:00Z"))])
+    }
+
+    @Test func updateProfileSendsDisplayNameAndDecodesUser() async throws {
+        let profileID = UUID()
+        let body = Data("""
+        {"user":{"id":"\(profileID)","username":"demo-user","displayName":"New Name","email":"demo@example.test","avatarUrl":null,"createdAt":"2026-02-08T12:00:00Z"}}
+        """.utf8)
+        let session = stubbedSession { request in
+            let requestBody = try #require(requestBodyData(request))
+            let payload = try #require(JSONSerialization.jsonObject(with: requestBody) as? [String: String])
+            #expect(payload["displayName"] == "New Name")
+            #expect(request.url?.path == "/api/v1/me")
+            #expect(request.httpMethod == "PATCH")
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer access-token")
+            return response(body: body, statusCode: 200)
+        }
+        let client = TrackerAPIClient(baseURL: URL(string: "https://tracker.example.test")!, session: session)
+
+        let profile = try await client.updateProfile(displayName: "New Name", accessToken: "access-token")
+
+        #expect(profile.id == profileID)
+        #expect(profile.displayName == "New Name")
+    }
+
+    @Test func createCategoryMapsDuplicateConflict() async throws {
+        let body = Data(#"{"error":{"code":"CATEGORY_CONFLICT","message":"Category name already exists"}}"#.utf8)
+        let session = stubbedSession { request in
+            #expect(request.httpMethod == "POST")
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer access-token")
+            return response(body: body, statusCode: 409)
+        }
+        let client = TrackerAPIClient(baseURL: URL(string: "https://tracker.example.test")!, session: session)
+
+        await #expect(throws: ProfileClientError.duplicateCategory) {
+            try await client.createCategory(name: "Writing", accessToken: "access-token")
+        }
+    }
+
+    @Test func createCategoryReturnsCreatedCategory() async throws {
+        let categoryID = UUID()
+        let body = Data("""
+        {"category":{"id":"\(categoryID)","name":"Writing","colorHex":"#4A6C45","createdAt":"2026-02-08T12:00:00Z"}}
+        """.utf8)
+        let session = stubbedSession { request in
+            #expect(request.httpMethod == "POST")
+            let requestBody = try #require(requestBodyData(request))
+            let payload = try #require(JSONSerialization.jsonObject(with: requestBody) as? [String: String])
+            #expect(payload["name"] == "Writing")
+            return response(body: body, statusCode: 201)
+        }
+        let client = TrackerAPIClient(baseURL: URL(string: "https://tracker.example.test")!, session: session)
+
+        let category = try await client.createCategory(name: "Writing", accessToken: "access-token")
+
+        #expect(category.id == categoryID)
+        #expect(category.colorHex == "#4A6C45")
+    }
+
     @Test func failedLoginMapsStructuredServerError() async throws {
         let body = Data(#"{"error":{"code":"INVALID_CREDENTIALS","message":"Invalid username or password"}}"#.utf8)
         let client = TrackerAPIClient(
@@ -76,6 +149,23 @@ struct APIClientTests {
         )!
         return (body, response)
     }
+}
+
+private func requestBodyData(_ request: URLRequest) -> Data? {
+    if let httpBody = request.httpBody { return httpBody }
+    guard let stream = request.httpBodyStream else { return nil }
+    stream.open()
+    defer { stream.close() }
+    var data = Data()
+    let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 4096)
+    defer { buffer.deallocate() }
+    while stream.hasBytesAvailable {
+        let count = stream.read(buffer, maxLength: 4096)
+        if count < 0 { return nil }
+        if count == 0 { break }
+        data.append(buffer, count: count)
+    }
+    return data
 }
 
 private func makeStubProtocol(
