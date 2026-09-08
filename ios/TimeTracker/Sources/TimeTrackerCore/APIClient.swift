@@ -43,12 +43,16 @@ public struct TrackerAPIClient: Sendable {
     public init(baseURL: URL, session: URLSession = .shared) {
         self.baseURL = baseURL
         self.session = session
-        self.encoder = JSONEncoder()
-        self.decoder = JSONDecoder()
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        self.encoder = encoder
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        self.decoder = decoder
     }
 
     public func register(username: String, displayName: String, email: String, password: String) async throws -> APIUser {
-        let request = try makeRequest(
+        let request = try makeBodyfulRequest(
             path: "/api/v1/auth/register",
             method: "POST",
             payload: RegisterPayload(username: username, displayName: displayName, email: email, password: password)
@@ -58,7 +62,7 @@ public struct TrackerAPIClient: Sendable {
     }
 
     public func login(username: String, password: String) async throws -> AuthTokenResponse {
-        let request = try makeRequest(
+        let request = try makeBodyfulRequest(
             path: "/api/v1/auth/login",
             method: "POST",
             payload: LoginPayload(username: username, password: password)
@@ -67,10 +71,43 @@ public struct TrackerAPIClient: Sendable {
     }
 
     public func profile(accessToken: String) async throws -> APIUser {
-        var request = try makeRequest(path: "/api/v1/me", method: "GET", payload: Optional<EmptyPayload>.none)
+        var request = try makeBodylessRequest(path: "/api/v1/me", method: "GET")
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         let response: UserEnvelope = try await send(request, as: UserEnvelope.self, expectedStatus: 200)
         return response.user
+    }
+
+    public func updateProfile(displayName: String, accessToken: String) async throws -> APIProfile {
+        var request = try makeBodyfulRequest(
+            path: "/api/v1/me",
+            method: "PATCH",
+            payload: UpdateProfilePayload(displayName: displayName, avatarUrl: nil)
+        )
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        let response: ProfileEnvelope = try await send(request, as: ProfileEnvelope.self, expectedStatus: 200)
+        return response.user
+    }
+
+    public func categories(accessToken: String) async throws -> [APICategory] {
+        var request = try makeBodylessRequest(path: "/api/v1/categories", method: "GET")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        let response: CategoriesEnvelope = try await send(request, as: CategoriesEnvelope.self, expectedStatus: 200)
+        return response.categories
+    }
+
+    public func createCategory(name: String, colorHex: String? = nil, accessToken: String) async throws -> APICategory {
+        var request = try makeBodyfulRequest(
+            path: "/api/v1/categories",
+            method: "POST",
+            payload: CreateCategoryPayload(name: name, colorHex: colorHex)
+        )
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        do {
+            let response: CategoryEnvelope = try await send(request, as: CategoryEnvelope.self, expectedStatus: 201)
+            return response.category
+        } catch APIClientError.server(_, let code) where code == "CATEGORY_CONFLICT" {
+            throw ProfileClientError.duplicateCategory
+        }
     }
 
     public func createLog(_ log: LocalActivityLog, accessToken: String) async throws -> LogReceiptResponse {
@@ -83,13 +120,13 @@ public struct TrackerAPIClient: Sendable {
             categoryIds: log.categoryIDs,
             visibility: log.visibility.rawValue
         )
-        var request = try makeRequest(path: "/api/v1/logs", method: "POST", payload: payload)
+        var request = try makeBodyfulRequest(path: "/api/v1/logs", method: "POST", payload: payload)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         return try await send(request, as: LogReceiptResponse.self, expectedStatus: nil)
     }
 
     public func encodedLoginRequest(username: String, password: String) throws -> URLRequest {
-        try makeRequest(
+        try makeBodyfulRequest(
             path: "/api/v1/auth/login",
             method: "POST",
             payload: LoginPayload(username: username, password: password)
@@ -97,7 +134,7 @@ public struct TrackerAPIClient: Sendable {
     }
 
     public func encodedLogRequest(_ log: LocalActivityLog, accessToken: String) throws -> URLRequest {
-        var request = try makeRequest(
+        var request = try makeBodyfulRequest(
             path: "/api/v1/logs",
             method: "POST",
             payload: CreateLogPayload(
@@ -114,19 +151,27 @@ public struct TrackerAPIClient: Sendable {
         return request
     }
 
-    func makeRequest<Payload: Encodable>(path: String, method: String, payload: Payload?) throws -> URLRequest {
+    func makeBodyfulRequest<Payload: Encodable>(path: String, method: String, payload: Payload) throws -> URLRequest {
         guard let url = URL(string: path, relativeTo: baseURL)?.absoluteURL else {
             throw APIClientError.invalidResponse
         }
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let payload {
-            let body = try encoder.encode(payload)
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.setValue(String(body.count), forHTTPHeaderField: "Content-Length")
-            request.httpBody = body
+        let body = try encoder.encode(payload)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(String(body.count), forHTTPHeaderField: "Content-Length")
+        request.httpBody = body
+        return request
+    }
+
+    func makeBodylessRequest(path: String, method: String) throws -> URLRequest {
+        guard let url = URL(string: path, relativeTo: baseURL)?.absoluteURL else {
+            throw APIClientError.invalidResponse
         }
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
         return request
     }
 
