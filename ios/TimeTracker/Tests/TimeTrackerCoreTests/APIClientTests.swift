@@ -119,6 +119,39 @@ struct APIClientTests {
         #expect(category.colorHex == "#4A6C45")
     }
 
+    @Test func feedPageRequestsCursorAndDecodesEntries() async throws {
+        let entryID = UUID()
+        let authorID = UUID()
+        let body = Data("""
+        {"items":[{"id":"\(entryID)","title":"Writing","notes":null,"startedAt":"2026-02-08T10:00:00Z","endedAt":"2026-02-08T11:30:00Z","durationSeconds":5400,"visibility":"friends_only","createdAt":"2026-02-08T11:30:00Z","author":{"id":"\(authorID)","username":"writer","displayName":"Writer","avatarUrl":null},"categories":[]}],"nextCursor":"opaque-cursor+with/slash="}
+        """.utf8)
+        let session = stubbedSession { request in
+            let url = try #require(request.url)
+            let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
+            #expect(components.path == "/api/v1/feed")
+            #expect(components.queryItems?.first(where: { $0.name == "limit" })?.value == "20")
+            #expect(components.queryItems?.first(where: { $0.name == "cursor" })?.value == "opaque-cursor+with/slash=")
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer access-token")
+            return response(body: body, statusCode: 200)
+        }
+        let client = TrackerAPIClient(baseURL: URL(string: "https://tracker.example.test")!, session: session)
+
+        let page = try await client.feedPage(accessToken: "access-token", cursor: "opaque-cursor+with/slash=")
+
+        #expect(page.items.count == 1)
+        #expect(page.items[0].id == entryID)
+        #expect(page.items[0].author.id == authorID)
+        #expect(page.items[0].visibility == .friendsOnly)
+        #expect(page.nextCursor == "opaque-cursor+with/slash=")
+    }
+
+    @Test func feedRejectsOutOfRangePageLimit() async throws {
+        let client = TrackerAPIClient(baseURL: URL(string: "https://tracker.example.test")!)
+        await #expect(throws: APIClientError.invalidResponse) {
+            try await client.feedPage(accessToken: "access-token", limit: 101)
+        }
+    }
+
     @Test func failedLoginMapsStructuredServerError() async throws {
         let body = Data(#"{"error":{"code":"INVALID_CREDENTIALS","message":"Invalid username or password"}}"#.utf8)
         let client = TrackerAPIClient(
