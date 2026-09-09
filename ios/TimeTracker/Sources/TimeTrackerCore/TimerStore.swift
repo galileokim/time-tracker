@@ -52,6 +52,7 @@ public final class StoredActivityLog {
     public var serverID: UUID?
     public var retryCount: Int
     public var lastSyncError: String?
+    public var userID: UUID?
 
     public init(log: LocalActivityLog) throws {
         id = log.id
@@ -66,6 +67,7 @@ public final class StoredActivityLog {
         serverID = log.serverID
         retryCount = log.retryCount
         lastSyncError = log.lastSyncError
+        userID = nil
     }
 
     public var activityLog: LocalActivityLog? {
@@ -115,6 +117,7 @@ public protocol TimerStoreProtocol {
     func stop(timerID: UUID, endedAt: Date) throws -> LocalActivityLog
     func currentTimer() throws -> RunningTimer?
     func pendingLogs() throws -> [LocalActivityLog]
+    func completedLogs() throws -> [LocalActivityLog]
     func markSyncing(idempotencyKey: UUID) throws
     func updatePendingLog(idempotencyKey: UUID, title: String, notes: String?, categoryIDs: [UUID], visibility: ActivityVisibility) throws
     func markSynced(idempotencyKey: UUID, serverID: UUID) throws
@@ -190,6 +193,14 @@ public final class SwiftDataTimerStore: TimerStoreProtocol {
             }
             return log
         }
+    }
+
+    public func completedLogs() throws -> [LocalActivityLog] {
+        let descriptor = FetchDescriptor<StoredActivityLog>(
+            predicate: #Predicate { $0.syncStateRawValue == "synced" },
+            sortBy: [SortDescriptor(\.startedAt, order: .reverse)]
+        )
+        return try modelContext.fetch(descriptor).compactMap(\.activityLog)
     }
 
     public func markSyncing(idempotencyKey: UUID) throws {
