@@ -340,6 +340,9 @@ struct TimerHomeView: View {
                     NavigationLink("Profile") {
                         ProfileAndCategoriesView(api: api, token: token, user: user)
                     }
+                    NavigationLink("Activity") {
+                        SocialFeedView(api: api, token: token)
+                    }
                     Button("Sign out", action: onSignOut)
                         .font(.subheadline)
                 }
