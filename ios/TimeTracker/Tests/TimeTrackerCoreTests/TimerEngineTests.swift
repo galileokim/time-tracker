@@ -19,6 +19,23 @@ struct TimerEngineTests {
         #expect(timer.elapsedSeconds(at: startedAt.addingTimeInterval(90)) == 90)
     }
 
+    @Test func startsTimerWithSelectedCategoriesAndVisibility() throws {
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let categoryIDs = [UUID(), UUID()]
+
+        let timer = try engine.start(
+            existing: nil,
+            title: "Planning",
+            notes: nil,
+            categoryIDs: categoryIDs,
+            visibility: .friendsOnly,
+            at: startedAt
+        )
+
+        #expect(timer.categoryIDs == categoryIDs)
+        #expect(timer.visibility == .friendsOnly)
+    }
+
     @Test func refusesToStartSecondRunningTimer() {
         let timer = RunningTimer(title: "Existing", startedAt: Date(timeIntervalSince1970: 100))
 
@@ -46,6 +63,7 @@ struct TimerEngineTests {
         #expect(log.endedAt == endedAt)
         #expect(log.durationSeconds == 1500)
         #expect(log.categoryIDs == [categoryID])
+        #expect(log.visibility == .friendsOnly)
         #expect(log.syncState == .pending)
         #expect(log.idempotencyKey != UUID(uuidString: "00000000-0000-0000-0000-000000000000"))
     }
