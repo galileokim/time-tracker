@@ -39,6 +39,8 @@ final class TimerHomeModel {
     private(set) var activityState: TimerActivityAttributes.ContentState?
     var title = ""
     var errorMessage: String?
+    private(set) var completedLogs: [LocalActivityLog] = []
+    private(set) var categories: [APICategory] = []
 
     init(
         modelContext: ModelContext,
@@ -97,6 +99,7 @@ final class TimerHomeModel {
         do {
             runningTimer = try modelContext.fetch(FetchDescriptor<StoredTimer>(sortBy: [SortDescriptor(\.startedAt)])).first?.runningTimer
             pendingLogCount = try modelContext.fetchCount(FetchDescriptor<StoredActivityLog>(predicate: #Predicate { $0.syncStateRawValue == "pending" || $0.syncStateRawValue == "syncing" }))
+            completedLogs = try SwiftDataTimerStore(modelContext: modelContext).completedLogs()
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
@@ -116,8 +119,17 @@ final class TimerHomeModel {
             let worker = OfflineSyncWorker(store: store, api: api) { token }
             _ = try await worker.synchronize()
             refresh()
+            await reloadCategories(token: token)
         } catch {
             errorMessage = "Sync could not start. Your logs remain saved on this device."
+        }
+    }
+
+    func reloadCategories(token: String) async {
+        do {
+            categories = try await api.categories(accessToken: token)
+        } catch {
+            errorMessage = "Categories could not be refreshed."
         }
     }
 }
@@ -310,6 +322,7 @@ struct TimerHomeView: View {
                         let timerModel = TimerHomeModel(modelContext: modelContext, api: api, liveActivity: liveActivity) { token }
                         model = timerModel
                         await timerModel.synchronize()
+                        await timerModel.reloadCategories(token: token)
                     }
             }
         }
@@ -378,6 +391,11 @@ struct TimerHomeView: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(model.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
+
+            ProductivitySummaryView(
+                summary: ProductivitySummary(logs: model.completedLogs, now: now),
+                categories: model.categories
+            )
 
             if let state = model.activityState {
                 LiveTimerLockScreenView(state: state)
