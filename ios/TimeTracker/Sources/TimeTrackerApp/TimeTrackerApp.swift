@@ -38,6 +38,8 @@ final class TimerHomeModel {
     private(set) var syncInProgress = false
     private(set) var activityState: TimerActivityAttributes.ContentState?
     var title = ""
+    var selectedCategoryIDs: Set<UUID> = []
+    var visibility: ActivityVisibility = .public
     var errorMessage: String?
     private(set) var completedLogs: [LocalActivityLog] = []
     private(set) var categories: [APICategory] = []
@@ -57,11 +59,12 @@ final class TimerHomeModel {
 
     func start(at date: Date = .now) {
         do {
-            let timer = try engine.start(existing: runningTimer, title: title, notes: nil, categoryIDs: [], visibility: .public, at: date)
+            let timer = try engine.start(existing: runningTimer, title: title, notes: nil, categoryIDs: Array(selectedCategoryIDs), visibility: visibility, at: date)
             modelContext.insert(try StoredTimer(timer: timer))
             try modelContext.save()
             runningTimer = timer
             title = ""
+            selectedCategoryIDs = []
             errorMessage = nil
             Task {
                 await liveActivity.start(for: timer)
@@ -364,6 +367,14 @@ struct TimerHomeView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(timer.title)
                         .font(.title2.weight(.medium))
+                    Text(timer.visibility == .friendsOnly ? "Friends only" : timer.visibility.rawValue.capitalized)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if !timer.categoryIDs.isEmpty {
+                        Text(timer.categoryIDs.compactMap { id in model.categories.first(where: { $0.id == id })?.name }.joined(separator: ", "))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
                     Text(Duration.seconds(timer.elapsedSeconds(at: now)), format: .time(pattern: .hourMinuteSecond))
                         .font(.system(size: 48, weight: .regular, design: .rounded).monospacedDigit())
                         .contentTransition(.numericText())
@@ -383,6 +394,37 @@ struct TimerHomeView: View {
                 ))
                 .textFieldStyle(.roundedBorder)
                 .textInputAutocapitalization(.sentences)
+
+                if !model.categories.isEmpty {
+                    Menu("Categories: \(model.selectedCategoryIDs.count)") {
+                        ForEach(model.categories) { category in
+                            Button {
+                                if model.selectedCategoryIDs.contains(category.id) {
+                                    model.selectedCategoryIDs.remove(category.id)
+                                } else {
+                                    model.selectedCategoryIDs.insert(category.id)
+                                }
+                            } label: {
+                                if model.selectedCategoryIDs.contains(category.id) {
+                                    Label(category.name, systemImage: "checkmark")
+                                } else {
+                                    Text(category.name)
+                                }
+                            }
+                        }
+                    }
+                    .frame(minHeight: 44)
+                }
+
+                Picker("Visibility", selection: Binding(
+                    get: { model.visibility },
+                    set: { model.visibility = $0 }
+                )) {
+                    Text("Public").tag(ActivityVisibility.public)
+                    Text("Friends").tag(ActivityVisibility.friendsOnly)
+                    Text("Private").tag(ActivityVisibility.private)
+                }
+                .pickerStyle(.segmented)
 
                 Button(action: { model.start() }) {
                     Text("Start timer")
