@@ -1,6 +1,7 @@
 import SwiftData
 import SwiftUI
 import Network
+import WidgetKit
 
 @main
 struct TimeTrackerApp: App {
@@ -55,6 +56,7 @@ final class TimerHomeModel {
         self.liveActivity = liveActivity
         self.tokenProvider = tokenProvider
         refresh()
+        refreshProductivityWidget()
     }
 
     func start(at date: Date = .now) {
@@ -87,6 +89,7 @@ final class TimerHomeModel {
             modelContext.insert(try StoredActivityLog(log: log))
             try modelContext.save()
             refresh()
+            refreshProductivityWidget()
             errorMessage = nil
             Task {
                 await liveActivity.end(timerID: timerID)
@@ -122,10 +125,21 @@ final class TimerHomeModel {
             let worker = OfflineSyncWorker(store: store, api: api) { token }
             _ = try await worker.synchronize()
             refresh()
+            refreshProductivityWidget()
             await reloadCategories(token: token)
         } catch {
             errorMessage = "Sync could not start. Your logs remain saved on this device."
         }
+    }
+
+    private func refreshProductivityWidget() {
+        let summary = ProductivitySummary(logs: completedLogs.map(\.productivitySummaryLog))
+        let defaults = UserDefaults(suiteName: "group.com.timetracker.shared")
+        defaults?.set(summary.todaySeconds, forKey: "productivity.todaySeconds")
+        defaults?.set(summary.weekSeconds, forKey: "productivity.weekSeconds")
+        defaults?.set(Date().timeIntervalSince1970, forKey: "productivity.updatedAt")
+        defaults?.synchronize()
+        WidgetCenter.shared.reloadTimelines(ofKind: "ProductivityWidget")
     }
 
     func reloadCategories(token: String) async {
@@ -435,7 +449,7 @@ struct TimerHomeView: View {
             }
 
             ProductivitySummaryView(
-                summary: ProductivitySummary(logs: model.completedLogs, now: now),
+                summary: ProductivitySummary(logs: model.completedLogs.map(\.productivitySummaryLog), now: now),
                 categories: model.categories
             )
 
