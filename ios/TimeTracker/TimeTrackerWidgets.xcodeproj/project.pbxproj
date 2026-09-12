@@ -1,0 +1,28 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 60;
+	objects = {
+		W001 /* ProductivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = W101; };
+		W002 /* ProductivitySummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = W102; };
+		W101 /* ProductivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/TimeTrackerWidget/ProductivityWidget.swift; sourceTree = SOURCE_ROOT; };
+		W102 /* ProductivitySummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/TimeTrackerCore/ProductivitySummaryModel.swift; sourceTree = SOURCE_ROOT; };
+		W103 /* TimeTrackerWidgets.appex */ = {isa = PBXFileReference; explicitFileType = wrapper.app-extension; includeInIndex = 0; path = TimeTrackerWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		W201 = {isa = PBXGroup; children = (W202, W203,); sourceTree = "<group>"; };
+		W202 /* Sources */ = {isa = PBXGroup; children = (W101, W102,); path = .; sourceTree = SOURCE_ROOT; };
+		W203 /* Products */ = {isa = PBXGroup; children = (W103,); name = Products; sourceTree = "<group>"; };
+		W301 /* Widget Extension */ = {isa = PBXNativeTarget; buildConfigurationList = W401; buildPhases = (W501, W502, W503,); buildRules = (); dependencies = (); name = TimeTrackerWidgets; productName = TimeTrackerWidgets; productReference = W103; productType = "com.apple.product-type.app-extension"; };
+		W302 /* Project */ = {isa = PBXProject; attributes = {BuildIndependentTargetsInParallel = 1; LastUpgradeCheck = 2660; TargetAttributes = {W301 = {CreatedOnToolsVersion = 26.6; }; }; }; buildConfigurationList = W402; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; mainGroup = W201; productRefGroup = W203; projectDirPath = ""; projectRoot = ""; targets = (W301,); };
+		W501 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (W001, W002,); runOnlyForDeploymentPostprocessing = 0; };
+		W502 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		W503 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		W601 /* Project Debug */ = {isa = XCBuildConfiguration; buildSettings = {IPHONEOS_DEPLOYMENT_TARGET = 17.0; SDKROOT = iphoneos; SWIFT_VERSION = 6.0; }; name = Debug; };
+		W602 /* Project Release */ = {isa = XCBuildConfiguration; buildSettings = {IPHONEOS_DEPLOYMENT_TARGET = 17.0; SDKROOT = iphoneos; SWIFT_VERSION = 6.0; }; name = Release; };
+		W603 /* Widget Debug */ = {isa = XCBuildConfiguration; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; CODE_SIGNING_ALLOWED = NO; CODE_SIGN_ENTITLEMENTS = TimeTrackerWidgets.entitlements; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_FILE = TimeTrackerWidgets-Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 17.0; PRODUCT_BUNDLE_IDENTIFIER = com.timetracker.app.widgets; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Debug; };
+		W604 /* Widget Release */ = {isa = XCBuildConfiguration; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; CODE_SIGNING_ALLOWED = NO; CODE_SIGN_ENTITLEMENTS = TimeTrackerWidgets.entitlements; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_FILE = TimeTrackerWidgets-Info.plist; IPHONEOS_DEPLOYMENT_TARGET = 17.0; PRODUCT_BUNDLE_IDENTIFIER = com.timetracker.app.widgets; PRODUCT_NAME = "$(TARGET_NAME)"; SKIP_INSTALL = YES; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Release; };
+		W401 /* Widget Configurations */ = {isa = XCConfigurationList; buildConfigurations = (W603, W604,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		W402 /* Project Configurations */ = {isa = XCConfigurationList; buildConfigurations = (W601, W602,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+	};
+	rootObject = W302;
+}
