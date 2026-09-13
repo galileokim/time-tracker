@@ -152,6 +152,77 @@ struct APIClientTests {
         }
     }
 
+    @Test func searchesUsersWithAuthorizationAndEncodedUsername() async throws {
+        let userID = UUID()
+        let body = Data("""
+        {"users":[{"id":"\(userID)","username":"a+b_writer","displayName":"Writer","isFollowing":false}]}
+        """.utf8)
+        let session = stubbedSession { request in
+            let url = try #require(request.url)
+            let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
+            #expect(components.path == "/api/v1/users/search")
+            #expect(components.queryItems?.first(where: { $0.name == "username" })?.value == "a+b")
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer access-token")
+            return response(body: body, statusCode: 200)
+        }
+        let client = TrackerAPIClient(baseURL: URL(string: "https://tracker.example.test")!, session: session)
+
+        let users = try await client.searchUsers(username: " a+b ", accessToken: "access-token")
+
+        #expect(users == [SocialUser(id: userID, username: "a+b_writer", displayName: "Writer", isFollowing: false)])
+    }
+
+    @Test func followingDecodesProtectedList() async throws {
+        let userID = UUID()
+        let body = Data("""
+        {"following":[{"id":"\(userID)","username":"writer","displayName":"Writer","avatarUrl":null,"followedAt":"2026-02-08T12:00:00Z"}]}
+        """.utf8)
+        let session = stubbedSession { request in
+            #expect(request.url?.path == "/api/v1/follows")
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer access-token")
+            return response(body: body, statusCode: 200)
+        }
+        let client = TrackerAPIClient(baseURL: URL(string: "https://tracker.example.test")!, session: session)
+
+        let following = try await client.following(accessToken: "access-token")
+
+        #expect(following.count == 1)
+        #expect(following[0].id == userID)
+        #expect(following[0].displayName == "Writer")
+    }
+
+    @Test func followsAndUnfollowsThroughProtectedEndpoints() async throws {
+        let userID = UUID()
+        let requestCapture = RequestCapture()
+        let session = stubbedSession { request in
+            let requestIndex = requestCapture.next()
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer access-token")
+            if requestIndex == 1 {
+                #expect(request.url?.path == "/api/v1/follows")
+                #expect(request.httpMethod == "POST")
+                let requestBody = try #require(requestBodyData(request))
+                let payload = try #require(JSONSerialization.jsonObject(with: requestBody) as? [String: String])
+                #expect(payload["userId"]?.lowercased() == userID.uuidString.lowercased())
+                return response(body: Data(), statusCode: 204)
+            }
+            #expect(request.url?.path == "/api/v1/follows/\(userID.uuidString)")
+            #expect(request.httpMethod == "DELETE")
+            return response(body: Data(), statusCode: 204)
+        }
+        let client = TrackerAPIClient(baseURL: URL(string: "https://tracker.example.test")!, session: session)
+
+        try await client.follow(userID: userID, accessToken: "access-token")
+        try await client.unfollow(userID: userID, accessToken: "access-token")
+        #expect(requestCapture.value == 2)
+    }
+
+    @Test func searchRejectsShortUsernameBeforeRequest() async throws {
+        let client = TrackerAPIClient(baseURL: URL(string: "https://tracker.example.test")!)
+        await #expect(throws: SocialClientError.invalidUsername) {
+            try await client.searchUsers(username: "ab", accessToken: "access-token")
+        }
+    }
+
     @Test func failedLoginMapsStructuredServerError() async throws {
         let body = Data(#"{"error":{"code":"INVALID_CREDENTIALS","message":"Invalid username or password"}}"#.utf8)
         let client = TrackerAPIClient(
@@ -181,6 +252,24 @@ struct APIClientTests {
             headerFields: ["Content-Type": "application/json"]
         )!
         return (body, response)
+    }
+}
+
+private final class RequestCapture: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    var value: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return count
+    }
+
+    func next() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        count += 1
+        return count
     }
 }
 
