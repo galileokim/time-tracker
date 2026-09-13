@@ -110,6 +110,41 @@ public struct TrackerAPIClient: Sendable {
         }
     }
 
+    public func searchUsers(username: String, accessToken: String) async throws -> [SocialUser] {
+        let query = username.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard query.count >= 3, query.count <= 50 else { throw SocialClientError.invalidUsername }
+        var components = URLComponents()
+        components.queryItems = [URLQueryItem(name: "username", value: query)]
+        guard let encodedQuery = components.percentEncodedQuery else { throw APIClientError.invalidResponse }
+        var request = try makeBodylessRequest(path: "/api/v1/users/search?\(encodedQuery)", method: "GET")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        let response: UserSearchEnvelope = try await send(request, as: UserSearchEnvelope.self, expectedStatus: 200)
+        return response.users
+    }
+
+    public func following(accessToken: String) async throws -> [FollowingUser] {
+        var request = try makeBodylessRequest(path: "/api/v1/follows", method: "GET")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        let response: FollowingEnvelope = try await send(request, as: FollowingEnvelope.self, expectedStatus: 200)
+        return response.following
+    }
+
+    public func follow(userID: UUID, accessToken: String) async throws {
+        var request = try makeBodyfulRequest(path: "/api/v1/follows", method: "POST", payload: FollowPayload(userId: userID))
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        do {
+            try await sendNoContent(request, expectedStatus: 204)
+        } catch APIClientError.server(400, let code) where code == "SELF_FOLLOW_NOT_ALLOWED" {
+            throw SocialClientError.followConflict
+        }
+    }
+
+    public func unfollow(userID: UUID, accessToken: String) async throws {
+        var request = try makeBodylessRequest(path: "/api/v1/follows/\(userID.uuidString)", method: "DELETE")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        try await sendNoContent(request, expectedStatus: 204)
+    }
+
     public func feedPage(accessToken: String, cursor: String? = nil, limit: Int = 20) async throws -> FeedPage {
         guard (1...100).contains(limit) else { throw APIClientError.invalidResponse }
         var components = URLComponents()
@@ -188,6 +223,16 @@ public struct TrackerAPIClient: Sendable {
         return request
     }
 
+    func sendNoContent(_ request: URLRequest, expectedStatus: Int) async throws {
+        let (_, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIClientError.invalidResponse
+        }
+        guard httpResponse.statusCode == expectedStatus else {
+            throw APIClientError.server(statusCode: httpResponse.statusCode, code: "UNKNOWN_ERROR")
+        }
+    }
+
     func send<Response: Decodable>(
         _ request: URLRequest,
         as responseType: Response.Type,
@@ -237,3 +282,4 @@ private struct UserEnvelope: Decodable {
 }
 
 private struct EmptyPayload: Encodable {}
+private struct EmptyResponse: Decodable {}
