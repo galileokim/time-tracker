@@ -89,6 +89,27 @@ export class SocialService {
       .execute();
   }
 
+  async searchUsers(userId: string, username: string) {
+    const matches = await this.db
+      .selectFrom("users")
+      .leftJoin("follows", (join) => join
+        .onRef("follows.following_id", "=", "users.id")
+        .on("follows.follower_id", "=", userId))
+      .select(["users.id", "users.username", "users.display_name", "follows.following_id as followed_id"])
+      .where("users.id", "!=", userId)
+      .where("users.username", "ilike", `%${escapeLikePattern(username)}%`)
+      .orderBy("users.username", "asc")
+      .limit(30)
+      .execute();
+
+    return matches.map(({ id, username: matchedUsername, display_name, followed_id }) => ({
+      id,
+      username: matchedUsername,
+      displayName: display_name,
+      isFollowing: followed_id !== null,
+    }));
+  }
+
   async getFeedPage(userId: string, query: FeedQuery): Promise<FeedPage> {
     const cursor = query.cursor ? decodeCursor(query.cursor) : undefined;
     const candidates = await this.readCandidates(userId, cursor, query.limit);
@@ -144,6 +165,10 @@ export class SocialService {
       604800,
     );
   }
+}
+
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, "\\$&");
 }
 
 export function decodeCursor(value: string): FeedCursor {

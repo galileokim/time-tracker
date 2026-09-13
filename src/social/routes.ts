@@ -42,6 +42,14 @@ export const socialRoutes: FastifyPluginAsync<SocialRouteOptions> = async (app, 
     following: await social.listFollowing(authenticatedUserId(request)),
   }));
 
+  app.get<{ Querystring: { username?: string } }>("/users/search", async (request, reply) => {
+    const username = typeof request.query.username === "string" ? request.query.username.trim() : "";
+    if (username.length < 3 || username.length > 50) {
+      return reply.code(400).send({ error: { code: "INVALID_SEARCH", message: "Enter at least three username characters" } });
+    }
+    return { users: await social.searchUsers(authenticatedUserId(request), username) };
+  });
+
   app.get("/feed", async (request, reply) => {
     const query = feedQuerySchema.safeParse(request.query);
     if (!query.success) return invalidRequest(reply, query.error.issues);
