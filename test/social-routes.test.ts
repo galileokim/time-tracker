@@ -28,6 +28,22 @@ test("follow rules filter feed visibility and paginate without duplicates", asyn
   const unrelated = await createAccount(app, "social_unrelated");
   userIDs.push(viewer.id, author.id, unrelated.id);
 
+  const search = await app.inject({
+    method: "GET",
+    url: `/api/v1/users/search?username=${encodeURIComponent(author.username.slice(0, 8))}`,
+    headers: { authorization: `Bearer ${viewer.token}` },
+  });
+  assert.equal(search.statusCode, 200, search.body);
+  assert.ok(search.json().users.some((user: { id: string; isFollowing: boolean }) => user.id === author.id && !user.isFollowing));
+  assert.ok(!search.json().users.some((user: { id: string }) => user.id === viewer.id));
+
+  const tooShortSearch = await app.inject({
+    method: "GET",
+    url: "/api/v1/users/search?username=ab",
+    headers: { authorization: `Bearer ${viewer.token}` },
+  });
+  assert.equal(tooShortSearch.statusCode, 400);
+
   const selfFollow = await app.inject({
     method: "POST",
     url: "/api/v1/follows",
@@ -43,6 +59,13 @@ test("follow rules filter feed visibility and paginate without duplicates", asyn
     payload: { userId: author.id },
   });
   assert.equal(follow.statusCode, 204);
+
+  const followedSearch = await app.inject({
+    method: "GET",
+    url: `/api/v1/users/search?username=${encodeURIComponent(author.username)}`,
+    headers: { authorization: `Bearer ${viewer.token}` },
+  });
+  assert.equal(followedSearch.json().users.find((user: { id: string }) => user.id === author.id).isFollowing, true);
 
   const following = await app.inject({
     method: "GET",
@@ -177,5 +200,5 @@ async function createAccount(app: ReturnType<typeof buildApp>, suffix: string) {
     payload: { username, password },
   });
   assert.equal(login.statusCode, 200);
-  return { id: response.json().user.id as string, token: login.json().accessToken as string };
+  return { id: response.json().user.id as string, username, token: login.json().accessToken as string };
 }
