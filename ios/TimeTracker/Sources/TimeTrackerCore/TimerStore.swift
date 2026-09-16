@@ -4,6 +4,7 @@ import SwiftData
 @Model
 public final class StoredTimer {
     @Attribute(.unique) public var id: UUID
+    public var userID: UUID?
     public var title: String
     public var notes: String?
     public var categoryIDsData: Data
@@ -12,6 +13,7 @@ public final class StoredTimer {
 
     public init(timer: RunningTimer) throws {
         id = timer.id
+        userID = timer.userID
         title = timer.title
         notes = timer.notes
         categoryIDsData = try JSONEncoder().encode(timer.categoryIDs)
@@ -29,6 +31,7 @@ public final class StoredTimer {
 
         return RunningTimer(
             id: id,
+            userID: userID,
             title: title,
             notes: notes,
             categoryIDs: categoryIDs,
@@ -57,6 +60,7 @@ public final class StoredActivityLog {
     public init(log: LocalActivityLog) throws {
         id = log.id
         idempotencyKey = log.idempotencyKey
+        userID = log.userID
         title = log.title
         notes = log.notes
         startedAt = log.startedAt
@@ -67,7 +71,6 @@ public final class StoredActivityLog {
         serverID = log.serverID
         retryCount = log.retryCount
         lastSyncError = log.lastSyncError
-        userID = nil
     }
 
     public var activityLog: LocalActivityLog? {
@@ -82,6 +85,7 @@ public final class StoredActivityLog {
         return LocalActivityLog(
             id: id,
             idempotencyKey: idempotencyKey,
+            userID: userID,
             title: title,
             notes: notes,
             startedAt: startedAt,
@@ -98,6 +102,7 @@ public final class StoredActivityLog {
 
 public enum TimerStoreError: Error, Equatable {
     case timerAlreadyRunning
+    case accountMismatch
     case noRunningTimer
     case timerNotFound
     case invalidStoredTimer
@@ -108,20 +113,21 @@ public enum TimerStoreError: Error, Equatable {
 @MainActor
 public protocol TimerStoreProtocol {
     func start(
+        userID: UUID,
         title: String,
         notes: String?,
         categoryIDs: [UUID],
         visibility: ActivityVisibility,
         startedAt: Date
     ) throws -> RunningTimer
-    func stop(timerID: UUID, endedAt: Date) throws -> LocalActivityLog
-    func currentTimer() throws -> RunningTimer?
-    func pendingLogs() throws -> [LocalActivityLog]
-    func completedLogs() throws -> [LocalActivityLog]
-    func markSyncing(idempotencyKey: UUID) throws
-    func updatePendingLog(idempotencyKey: UUID, title: String, notes: String?, categoryIDs: [UUID], visibility: ActivityVisibility) throws
-    func markSynced(idempotencyKey: UUID, serverID: UUID) throws
-    func recordAttempt(idempotencyKey: UUID, failure: String) throws
+    func stop(timerID: UUID, userID: UUID, endedAt: Date) throws -> LocalActivityLog
+    func currentTimer(userID: UUID) throws -> RunningTimer?
+    func pendingLogs(userID: UUID) throws -> [LocalActivityLog]
+    func completedLogs(userID: UUID) throws -> [LocalActivityLog]
+    func markSyncing(idempotencyKey: UUID, userID: UUID) throws
+    func updatePendingLog(idempotencyKey: UUID, userID: UUID, title: String, notes: String?, categoryIDs: [UUID], visibility: ActivityVisibility) throws
+    func markSynced(idempotencyKey: UUID, userID: UUID, serverID: UUID) throws
+    func recordAttempt(idempotencyKey: UUID, userID: UUID, failure: String) throws
 }
 
 @MainActor
@@ -135,28 +141,31 @@ public final class SwiftDataTimerStore: TimerStoreProtocol {
     }
 
     public func start(
+        userID: UUID,
         title: String,
         notes: String? = nil,
         categoryIDs: [UUID] = [],
         visibility: ActivityVisibility = .public,
         startedAt: Date = .now
     ) throws -> RunningTimer {
-        let timer = try engine.start(
-            existing: currentTimer(),
+        let created = try engine.start(
+            existing: try currentTimer(userID: userID),
             title: title,
             notes: notes,
             categoryIDs: categoryIDs,
             visibility: visibility,
             at: startedAt
         )
+        var timer = created
+        timer.userID = userID
         modelContext.insert(try StoredTimer(timer: timer))
         try modelContext.save()
         return timer
     }
 
-    public func stop(timerID: UUID, endedAt: Date = .now) throws -> LocalActivityLog {
+    public func stop(timerID: UUID, userID: UUID, endedAt: Date = .now) throws -> LocalActivityLog {
         let descriptor = FetchDescriptor<StoredTimer>(
-            predicate: #Predicate { $0.id == timerID }
+            predicate: #Predicate { $0.id == timerID && $0.userID == userID }
         )
         guard let storedTimer = try modelContext.fetch(descriptor).first else {
             throw TimerStoreError.timerNotFound
@@ -164,24 +173,28 @@ public final class SwiftDataTimerStore: TimerStoreProtocol {
         guard let timer = storedTimer.runningTimer else {
             throw TimerStoreError.invalidStoredTimer
         }
-        let log = try engine.stop(timer: timer, at: endedAt)
+        var log = try engine.stop(timer: timer, at: endedAt)
+        log.userID = timer.userID
         modelContext.insert(try StoredActivityLog(log: log))
         modelContext.delete(storedTimer)
         try modelContext.save()
         return log
     }
 
-    public func currentTimer() throws -> RunningTimer? {
-        var descriptor = FetchDescriptor<StoredTimer>(sortBy: [SortDescriptor(\.startedAt)] )
+    public func currentTimer(userID: UUID) throws -> RunningTimer? {
+        var descriptor = FetchDescriptor<StoredTimer>(
+            predicate: #Predicate { $0.userID == userID },
+            sortBy: [SortDescriptor(\.startedAt)]
+        )
         descriptor.fetchLimit = 1
         guard let stored = try modelContext.fetch(descriptor).first else { return nil }
         guard let timer = stored.runningTimer else { throw TimerStoreError.invalidStoredTimer }
         return timer
     }
 
-    public func pendingLogs() throws -> [LocalActivityLog] {
+    public func pendingLogs(userID: UUID) throws -> [LocalActivityLog] {
         let descriptor = FetchDescriptor<StoredActivityLog>(
-            predicate: #Predicate { $0.syncStateRawValue == "pending" || $0.syncStateRawValue == "syncing" },
+            predicate: #Predicate { $0.userID == userID && ($0.syncStateRawValue == "pending" || $0.syncStateRawValue == "syncing") },
             sortBy: [SortDescriptor(\.startedAt)]
         )
         return try modelContext.fetch(descriptor).compactMap { stored in
@@ -195,16 +208,16 @@ public final class SwiftDataTimerStore: TimerStoreProtocol {
         }
     }
 
-    public func completedLogs() throws -> [LocalActivityLog] {
+    public func completedLogs(userID: UUID) throws -> [LocalActivityLog] {
         let descriptor = FetchDescriptor<StoredActivityLog>(
-            predicate: #Predicate { $0.syncStateRawValue == "synced" },
+            predicate: #Predicate { $0.userID == userID && $0.syncStateRawValue == "synced" },
             sortBy: [SortDescriptor(\.startedAt, order: .reverse)]
         )
         return try modelContext.fetch(descriptor).compactMap(\.activityLog)
     }
 
-    public func markSyncing(idempotencyKey: UUID) throws {
-        guard let stored = try storedLog(idempotencyKey: idempotencyKey), stored.syncStateRawValue == LocalSyncState.pending.rawValue else {
+    public func markSyncing(idempotencyKey: UUID, userID: UUID) throws {
+        guard let stored = try storedLog(idempotencyKey: idempotencyKey, userID: userID), stored.syncStateRawValue == LocalSyncState.pending.rawValue else {
             throw TimerStoreError.invalidStoredLog
         }
         stored.syncStateRawValue = LocalSyncState.syncing.rawValue
@@ -213,12 +226,13 @@ public final class SwiftDataTimerStore: TimerStoreProtocol {
 
     public func updatePendingLog(
         idempotencyKey: UUID,
+        userID: UUID,
         title: String,
         notes: String?,
         categoryIDs: [UUID],
         visibility: ActivityVisibility
     ) throws {
-        guard let stored = try storedLog(idempotencyKey: idempotencyKey), stored.syncStateRawValue == LocalSyncState.pending.rawValue else {
+        guard let stored = try storedLog(idempotencyKey: idempotencyKey, userID: userID), stored.syncStateRawValue == LocalSyncState.pending.rawValue else {
             throw TimerStoreError.invalidStoredLog
         }
         stored.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -228,8 +242,8 @@ public final class SwiftDataTimerStore: TimerStoreProtocol {
         try modelContext.save()
     }
 
-    public func markSynced(idempotencyKey: UUID, serverID: UUID) throws {
-        guard let stored = try storedLog(idempotencyKey: idempotencyKey) else {
+    public func markSynced(idempotencyKey: UUID, userID: UUID, serverID: UUID) throws {
+        guard let stored = try storedLog(idempotencyKey: idempotencyKey, userID: userID) else {
             throw TimerStoreError.invalidStoredLog
         }
         stored.syncStateRawValue = LocalSyncState.synced.rawValue
@@ -238,8 +252,8 @@ public final class SwiftDataTimerStore: TimerStoreProtocol {
         try modelContext.save()
     }
 
-    public func recordAttempt(idempotencyKey: UUID, failure: String) throws {
-        guard let stored = try storedLog(idempotencyKey: idempotencyKey) else {
+    public func recordAttempt(idempotencyKey: UUID, userID: UUID, failure: String) throws {
+        guard let stored = try storedLog(idempotencyKey: idempotencyKey, userID: userID) else {
             throw TimerStoreError.invalidStoredLog
         }
         stored.syncStateRawValue = LocalSyncState.pending.rawValue
@@ -248,9 +262,9 @@ public final class SwiftDataTimerStore: TimerStoreProtocol {
         try modelContext.save()
     }
 
-    private func storedLog(idempotencyKey: UUID) throws -> StoredActivityLog? {
+    private func storedLog(idempotencyKey: UUID, userID: UUID) throws -> StoredActivityLog? {
         let descriptor = FetchDescriptor<StoredActivityLog>(
-            predicate: #Predicate { $0.idempotencyKey == idempotencyKey }
+            predicate: #Predicate { $0.idempotencyKey == idempotencyKey && $0.userID == userID }
         )
         return try modelContext.fetch(descriptor).first
     }
