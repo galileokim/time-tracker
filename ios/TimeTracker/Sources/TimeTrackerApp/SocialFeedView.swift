@@ -69,6 +69,16 @@ struct SocialFeedView: View {
             }
         }
         .navigationTitle("Activity")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink {
+                    FollowManagementView(api: api, token: token)
+                } label: {
+                    Label("People", systemImage: "person.2")
+                }
+                .accessibilityLabel("Manage people you follow")
+            }
+        }
     }
 
     @ViewBuilder
@@ -86,7 +96,7 @@ struct SocialFeedView: View {
                     .frame(minHeight: 44)
             }
         } else if model.entries.isEmpty {
-            ContentUnavailableView("No activity yet", systemImage: "clock", description: Text("Follow people to see their public and friends-only activity here."))
+            ContentUnavailableView("No activity yet", systemImage: "clock", description: Text("Follow people to see their public and friends-only activity here. Use People to search by username."))
                 .refreshable { await model.refresh() }
         } else {
             List {
