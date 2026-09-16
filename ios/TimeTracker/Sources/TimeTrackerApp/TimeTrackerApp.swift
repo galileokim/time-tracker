@@ -187,6 +187,12 @@ final class AuthSession {
         }
     }
 
+    func updateDisplayName(_ displayName: String) {
+        guard var user else { return }
+        user.displayName = displayName
+        self.user = user
+    }
+
     func signOut() {
         do {
             try tokenStore.delete()
@@ -248,7 +254,7 @@ struct AppRootView: View {
         Group {
             if let session {
                 if let token = session.accessToken, session.user != nil {
-                    TimerHomeView(api: api, token: token, user: session.user!, onSignOut: session.signOut)
+                    TimerHomeView(api: api, token: token, user: session.user!, onSignOut: session.signOut, onDisplayNameChanged: session.updateDisplayName)
                 } else if session.accessToken != nil {
                     ProgressView("Restoring your session")
                         .task { await session.restoreSession() }
@@ -328,6 +334,7 @@ struct TimerHomeView: View {
     let token: String
     let user: APIUser
     var onSignOut: () -> Void = {}
+    var onDisplayNameChanged: (String) -> Void = { _ in }
 
     var body: some View {
         Group {
@@ -368,7 +375,7 @@ struct TimerHomeView: View {
                         .font(.largeTitle.weight(.semibold))
                     Spacer()
                     NavigationLink("Profile") {
-                        ProfileAndCategoriesView(api: api, token: token, user: user)
+                        ProfileAndCategoriesView(api: api, token: token, user: user, onDisplayNameChanged: onDisplayNameChanged)
                     }
                     NavigationLink("Activity") {
                         SocialFeedView(api: api, token: token)
