@@ -5,6 +5,7 @@ import SwiftUI
 final class ProfileAndCategoriesModel {
     private let api: TrackerAPIClient
     private let token: String
+    private let onDisplayNameChanged: (String) -> Void
     private(set) var profile: APIProfile
     private(set) var categories: [APICategory] = []
     private(set) var isLoading = false
@@ -15,9 +16,10 @@ final class ProfileAndCategoriesModel {
     var errorMessage: String?
     var successMessage: String?
 
-    init(api: TrackerAPIClient, token: String, user: APIUser) {
+    init(api: TrackerAPIClient, token: String, user: APIUser, onDisplayNameChanged: @escaping (String) -> Void) {
         self.api = api
         self.token = token
+        self.onDisplayNameChanged = onDisplayNameChanged
         profile = APIProfile(id: user.id, username: user.username, displayName: user.displayName, email: user.email, avatarUrl: user.avatarUrl)
         displayName = user.displayName
     }
@@ -47,6 +49,7 @@ final class ProfileAndCategoriesModel {
         do {
             profile = try await api.updateProfile(displayName: trimmed, accessToken: token)
             displayName = profile.displayName
+            onDisplayNameChanged(profile.displayName)
             successMessage = "Profile saved."
         } catch {
             errorMessage = "Profile could not be saved. Check your connection and try again."
@@ -80,6 +83,7 @@ struct ProfileAndCategoriesView: View {
     let api: TrackerAPIClient
     let token: String
     let user: APIUser
+    var onDisplayNameChanged: (String) -> Void = { _ in }
     @State private var model: ProfileAndCategoriesModel?
 
     var body: some View {
@@ -155,7 +159,7 @@ struct ProfileAndCategoriesView: View {
                 .task { await model.load() }
             } else {
                 ProgressView("Opening profile")
-                    .task { model = ProfileAndCategoriesModel(api: api, token: token, user: user) }
+                    .task { model = ProfileAndCategoriesModel(api: api, token: token, user: user, onDisplayNameChanged: onDisplayNameChanged) }
             }
         }
     }

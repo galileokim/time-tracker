@@ -9,7 +9,7 @@ public struct AuthTokenResponse: Decodable, Sendable {
 public struct APIUser: Codable, Equatable, Sendable {
     public let id: UUID
     public let username: String
-    public let displayName: String
+    public var displayName: String
     public let email: String
     public let avatarUrl: URL?
 }
