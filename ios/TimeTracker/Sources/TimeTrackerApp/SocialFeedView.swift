@@ -96,8 +96,22 @@ struct SocialFeedView: View {
                     .frame(minHeight: 44)
             }
         } else if model.entries.isEmpty {
-            ContentUnavailableView("No activity yet", systemImage: "clock", description: Text("Follow people to see their public and friends-only activity here. Use People to search by username."))
-                .refreshable { await model.refresh() }
+            VStack(spacing: 16) {
+                ContentUnavailableView(
+                    "No activity yet",
+                    systemImage: "clock",
+                    description: Text("Follow people to see their public and friends-only activity here.")
+                )
+                NavigationLink {
+                    FollowManagementView(api: api, token: token)
+                } label: {
+                    Text("Find people")
+                        .frame(minWidth: 120, minHeight: 44)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .refreshable { await model.refresh() }
         } else {
             List {
                 ForEach(model.entries) { entry in
