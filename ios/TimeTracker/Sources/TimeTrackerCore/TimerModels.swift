@@ -15,6 +15,7 @@ public enum LocalSyncState: String, Codable, Sendable {
 
 public struct RunningTimer: Equatable, Sendable, Identifiable {
     public let id: UUID
+    public var userID: UUID?
     public var title: String
     public var notes: String?
     public var categoryIDs: [UUID]
@@ -23,6 +24,7 @@ public struct RunningTimer: Equatable, Sendable, Identifiable {
 
     public init(
         id: UUID = UUID(),
+        userID: UUID? = nil,
         title: String,
         notes: String? = nil,
         categoryIDs: [UUID] = [],
@@ -30,6 +32,7 @@ public struct RunningTimer: Equatable, Sendable, Identifiable {
         startedAt: Date = .now
     ) {
         self.id = id
+        self.userID = userID
         self.title = title
         self.notes = notes
         self.categoryIDs = categoryIDs
@@ -45,6 +48,7 @@ public struct RunningTimer: Equatable, Sendable, Identifiable {
 public struct LocalActivityLog: Equatable, Sendable, Identifiable {
     public let id: UUID
     public let idempotencyKey: UUID
+    public var userID: UUID?
     public var title: String
     public var notes: String?
     public var startedAt: Date
@@ -59,6 +63,7 @@ public struct LocalActivityLog: Equatable, Sendable, Identifiable {
     public init(
         id: UUID = UUID(),
         idempotencyKey: UUID = UUID(),
+        userID: UUID? = nil,
         title: String,
         notes: String?,
         startedAt: Date,
@@ -72,6 +77,7 @@ public struct LocalActivityLog: Equatable, Sendable, Identifiable {
     ) {
         self.id = id
         self.idempotencyKey = idempotencyKey
+        self.userID = userID
         self.title = title
         self.notes = notes
         self.startedAt = startedAt

@@ -14,6 +14,7 @@ public struct TimerEngine: Sendable {
         guard existing == nil else { throw TimerStoreError.timerAlreadyRunning }
         return RunningTimer(
             id: UUID(),
+            userID: nil,
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),
             notes: notes,
             categoryIDs: categoryIDs,
@@ -28,6 +29,7 @@ public struct TimerEngine: Sendable {
 
         return LocalActivityLog(
             idempotencyKey: UUID(),
+            userID: timer.userID,
             title: timer.title,
             notes: timer.notes,
             startedAt: timer.startedAt,
