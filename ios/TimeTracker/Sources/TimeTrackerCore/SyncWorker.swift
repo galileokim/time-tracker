@@ -57,31 +57,35 @@ public final class OfflineSyncWorker {
     private let tokenProvider: @Sendable () async -> String?
     private let coordinator = LogSyncCoordinator()
 
+    private let userID: UUID
+
     public init(
         store: any TimerStoreProtocol,
         api: TrackerAPIClient,
+        userID: UUID,
         tokenProvider: @escaping @Sendable () async -> String?
     ) {
         self.store = store
         self.api = api
+        self.userID = userID
         self.tokenProvider = tokenProvider
     }
 
     public func synchronize() async throws -> SyncReport {
         guard let token = await tokenProvider() else { return SyncReport() }
-        let queuedLogs = try store.pendingLogs()
+        let queuedLogs = try store.pendingLogs(userID: userID)
         for log in queuedLogs {
-            try store.markSyncing(idempotencyKey: log.idempotencyKey)
+            try store.markSyncing(idempotencyKey: log.idempotencyKey, userID: userID)
         }
 
         return await coordinator.synchronize(
             logs: queuedLogs,
             api: TokenizedLogSyncAPI(client: api, token: token),
             acknowledge: { idempotencyKey, serverID in
-                try store.markSynced(idempotencyKey: idempotencyKey, serverID: serverID)
+                try store.markSynced(idempotencyKey: idempotencyKey, userID: userID, serverID: serverID)
             },
             recordFailure: { idempotencyKey, message in
-                try? store.recordAttempt(idempotencyKey: idempotencyKey, failure: message)
+                try? store.recordAttempt(idempotencyKey: idempotencyKey, userID: userID, failure: message)
             }
         )
     }
