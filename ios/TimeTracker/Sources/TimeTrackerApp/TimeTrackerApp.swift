@@ -254,12 +254,13 @@ struct AppRootView: View {
     let api: TrackerAPIClient
     let tokenStore: KeychainTokenStore
     @State private var session: AuthSession?
+    @State private var liveActivity = LiveActivityController()
 
     var body: some View {
         Group {
             if let session {
                 if let token = session.accessToken, session.user != nil {
-                    TimerHomeView(api: api, token: token, user: session.user!, onSignOut: session.signOut, onDisplayNameChanged: session.updateDisplayName)
+                    TimerHomeView(api: api, token: token, user: session.user!, liveActivity: liveActivity, onSignOut: session.signOut, onDisplayNameChanged: session.updateDisplayName)
                 } else if session.accessToken != nil {
                     ProgressView("Restoring your session")
                         .task { await session.restoreSession() }
@@ -334,10 +335,10 @@ struct TimerHomeView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var model: TimerHomeModel?
     @State private var now = Date.now
-    @State private var liveActivity = LiveActivityController()
     let api: TrackerAPIClient
     let token: String
     let user: APIUser
+    let liveActivity: LiveActivityController
     var onSignOut: () -> Void = {}
     var onDisplayNameChanged: (String) -> Void = { _ in }
 
@@ -362,6 +363,11 @@ struct TimerHomeView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
                 now = .now
+            }
+        }
+        .onChange(of: token) { oldToken, newToken in
+            if oldToken != newToken {
+                Task { await liveActivity.endAll() }
             }
         }
         .onChange(of: scenePhase) { _, phase in

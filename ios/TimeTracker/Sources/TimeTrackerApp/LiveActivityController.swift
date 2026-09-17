@@ -51,6 +51,10 @@ final class LiveActivityController {
         return activity.content.state
     }
 
+    func endAll() async {
+        await endExistingActivity()
+    }
+
     func restoreRunningTimer(_ timer: RunningTimer?) async {
         guard let timer else {
             await endExistingActivity()
