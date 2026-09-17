@@ -102,6 +102,7 @@ public final class StoredActivityLog {
 
 public enum TimerStoreError: Error, Equatable {
     case timerAlreadyRunning
+    case legacyTimerNeedsReview
     case accountMismatch
     case noRunningTimer
     case timerNotFound
@@ -148,6 +149,9 @@ public final class SwiftDataTimerStore: TimerStoreProtocol {
         visibility: ActivityVisibility = .public,
         startedAt: Date = .now
     ) throws -> RunningTimer {
+        if try hasUnownedRunningTimer() {
+            throw TimerStoreError.legacyTimerNeedsReview
+        }
         let created = try engine.start(
             existing: try currentTimer(userID: userID),
             title: title,
@@ -260,6 +264,12 @@ public final class SwiftDataTimerStore: TimerStoreProtocol {
         stored.retryCount += 1
         stored.lastSyncError = failure
         try modelContext.save()
+    }
+
+    private func hasUnownedRunningTimer() throws -> Bool {
+        var descriptor = FetchDescriptor<StoredTimer>(predicate: #Predicate { $0.userID == nil })
+        descriptor.fetchLimit = 1
+        return try !modelContext.fetch(descriptor).isEmpty
     }
 
     private func storedLog(idempotencyKey: UUID, userID: UUID) throws -> StoredActivityLog? {

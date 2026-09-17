@@ -19,6 +19,9 @@ public final class AccountScopedTimerStore: TimerStoreProtocol {
         startedAt: Date
     ) throws -> RunningTimer {
         guard requestedUserID == userID else { throw TimerStoreError.accountMismatch }
+        guard try store.currentTimer(userID: userID) == nil else {
+            throw TimerStoreError.timerAlreadyRunning
+        }
         return try store.start(
             userID: userID,
             title: title,
