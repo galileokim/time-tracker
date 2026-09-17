@@ -5,6 +5,22 @@ import Testing
 @Suite(.serialized)
 @MainActor
 struct SyncWorkerTests {
+    @Test func workerScopesQueueAndAcknowledgementsToConfiguredAccount() async throws {
+        let userID = UUID()
+        let log = makeLog(title: "Owned log", userID: userID)
+        let store = RecordingTimerStore(log: log)
+        let worker = OfflineSyncWorker(
+            store: store,
+            api: TrackerAPIClient(baseURL: URL(string: "https://tracker.example.test")!),
+            userID: userID
+        ) { "access-token" }
+
+        _ = try await worker.synchronize()
+
+        #expect(store.pendingUserIDs == [userID])
+        #expect(store.transitionUserIDs == [userID, userID])
+    }
+
     @Test func acknowledgementPersistenceFailureRecordsRetryAndContinues() async {
         let logs = [makeLog(title: "first"), makeLog(title: "second")]
         let api = StubLogSyncAPI(failingKey: nil)
@@ -52,10 +68,11 @@ struct SyncWorkerTests {
         #expect(api.receivedKeys == logs.map(\.idempotencyKey))
     }
 
-    private func makeLog(title: String) -> LocalActivityLog {
+    private func makeLog(title: String, userID: UUID? = nil) -> LocalActivityLog {
         let start = Date(timeIntervalSince1970: 1_800_000_000)
         return LocalActivityLog(
             idempotencyKey: UUID(),
+            userID: userID,
             title: title,
             notes: nil,
             startedAt: start,
@@ -63,6 +80,45 @@ struct SyncWorkerTests {
             categoryIDs: [],
             visibility: .public
         )
+    }
+}
+
+@MainActor
+private final class RecordingTimerStore: TimerStoreProtocol {
+    let log: LocalActivityLog
+    private(set) var pendingUserIDs: [UUID] = []
+    private(set) var transitionUserIDs: [UUID] = []
+
+    init(log: LocalActivityLog) {
+        self.log = log
+    }
+
+    func start(userID: UUID, title: String, notes: String?, categoryIDs: [UUID], visibility: ActivityVisibility, startedAt: Date) throws -> RunningTimer {
+        RunningTimer(userID: userID, title: title, notes: notes, categoryIDs: categoryIDs, visibility: visibility, startedAt: startedAt)
+    }
+
+    func stop(timerID: UUID, userID: UUID, endedAt: Date) throws -> LocalActivityLog { log }
+    func currentTimer(userID: UUID) throws -> RunningTimer? { nil }
+
+    func pendingLogs(userID: UUID) throws -> [LocalActivityLog] {
+        pendingUserIDs.append(userID)
+        return [log]
+    }
+
+    func completedLogs(userID: UUID) throws -> [LocalActivityLog] { [] }
+
+    func markSyncing(idempotencyKey: UUID, userID: UUID) throws {
+        transitionUserIDs.append(userID)
+    }
+
+    func updatePendingLog(idempotencyKey: UUID, userID: UUID, title: String, notes: String?, categoryIDs: [UUID], visibility: ActivityVisibility) throws {}
+
+    func markSynced(idempotencyKey: UUID, userID: UUID, serverID: UUID) throws {
+        transitionUserIDs.append(userID)
+    }
+
+    func recordAttempt(idempotencyKey: UUID, userID: UUID, failure: String) throws {
+        transitionUserIDs.append(userID)
     }
 }
 
