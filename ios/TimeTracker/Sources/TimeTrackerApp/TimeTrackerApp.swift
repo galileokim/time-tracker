@@ -31,9 +31,9 @@ struct TimeTrackerApp: App {
 final class TimerHomeModel {
     private let modelContext: ModelContext
     private let api: TrackerAPIClient
-    private let engine = TimerEngine()
     private let liveActivity: LiveActivityController
     private let tokenProvider: @Sendable () async -> String?
+    private let userID: UUID
     private(set) var runningTimer: RunningTimer?
     private(set) var pendingLogCount = 0
     private(set) var syncInProgress = false
@@ -49,21 +49,32 @@ final class TimerHomeModel {
         modelContext: ModelContext,
         api: TrackerAPIClient,
         liveActivity: LiveActivityController,
+        userID: UUID,
         tokenProvider: @escaping @Sendable () async -> String?
     ) {
         self.modelContext = modelContext
         self.api = api
         self.liveActivity = liveActivity
+        self.userID = userID
         self.tokenProvider = tokenProvider
         refresh()
         refreshProductivityWidget()
     }
 
+    private var accountStore: AccountScopedTimerStore {
+        AccountScopedTimerStore(store: SwiftDataTimerStore(modelContext: modelContext), userID: userID)
+    }
+
     func start(at date: Date = .now) {
         do {
-            let timer = try engine.start(existing: runningTimer, title: title, notes: nil, categoryIDs: Array(selectedCategoryIDs), visibility: visibility, at: date)
-            modelContext.insert(try StoredTimer(timer: timer))
-            try modelContext.save()
+            let timer = try accountStore.start(
+                userID: userID,
+                title: title,
+                notes: nil,
+                categoryIDs: Array(selectedCategoryIDs),
+                visibility: visibility,
+                startedAt: date
+            )
             runningTimer = timer
             title = ""
             selectedCategoryIDs = []
@@ -81,13 +92,7 @@ final class TimerHomeModel {
         guard let runningTimer else { return }
         do {
             let timerID = runningTimer.id
-            let log = try engine.stop(timer: runningTimer, at: date)
-            let descriptor = FetchDescriptor<StoredTimer>(predicate: #Predicate { $0.id == timerID })
-            if let storedTimer = try modelContext.fetch(descriptor).first {
-                modelContext.delete(storedTimer)
-            }
-            modelContext.insert(try StoredActivityLog(log: log))
-            try modelContext.save()
+            _ = try accountStore.stop(timerID: timerID, userID: userID, endedAt: date)
             refresh()
             refreshProductivityWidget()
             errorMessage = nil
@@ -103,9 +108,10 @@ final class TimerHomeModel {
 
     func refresh() {
         do {
-            runningTimer = try modelContext.fetch(FetchDescriptor<StoredTimer>(sortBy: [SortDescriptor(\.startedAt)])).first?.runningTimer
-            pendingLogCount = try modelContext.fetchCount(FetchDescriptor<StoredActivityLog>(predicate: #Predicate { $0.syncStateRawValue == "pending" || $0.syncStateRawValue == "syncing" }))
-            completedLogs = try SwiftDataTimerStore(modelContext: modelContext).completedLogs()
+            let store = accountStore
+            runningTimer = try store.currentTimer(userID: userID)
+            pendingLogCount = try modelContext.fetchCount(FetchDescriptor<StoredActivityLog>(predicate: #Predicate { $0.userID == userID && ($0.syncStateRawValue == "pending" || $0.syncStateRawValue == "syncing") }))
+            completedLogs = try store.completedLogs(userID: userID)
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
@@ -121,8 +127,7 @@ final class TimerHomeModel {
         syncInProgress = true
         defer { syncInProgress = false }
         do {
-            let store = SwiftDataTimerStore(modelContext: modelContext)
-            let worker = OfflineSyncWorker(store: store, api: api) { token }
+            let worker = OfflineSyncWorker(store: accountStore, api: api, userID: userID) { token }
             _ = try await worker.synchronize()
             refresh()
             refreshProductivityWidget()
@@ -343,7 +348,7 @@ struct TimerHomeView: View {
             } else {
                 ProgressView("Opening your timer")
                     .task {
-                        let timerModel = TimerHomeModel(modelContext: modelContext, api: api, liveActivity: liveActivity) { token }
+                        let timerModel = TimerHomeModel(modelContext: modelContext, api: api, liveActivity: liveActivity, userID: user.id) { token }
                         model = timerModel
                         await timerModel.synchronize()
                         await timerModel.reloadCategories(token: token)
