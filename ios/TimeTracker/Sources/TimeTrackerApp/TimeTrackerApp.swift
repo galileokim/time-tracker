@@ -139,11 +139,8 @@ final class TimerHomeModel {
 
     private func refreshProductivityWidget() {
         let summary = ProductivitySummary(logs: completedLogs.map(\.productivitySummaryLog))
-        let defaults = UserDefaults(suiteName: "group.com.timetracker.shared")
-        defaults?.set(summary.todaySeconds, forKey: "productivity.todaySeconds")
-        defaults?.set(summary.weekSeconds, forKey: "productivity.weekSeconds")
-        defaults?.set(Date().timeIntervalSince1970, forKey: "productivity.updatedAt")
-        defaults?.synchronize()
+        let defaults = UserDefaults(suiteName: WidgetSummaryStorage.sharedGroupID)
+        WidgetSummaryStorage.publish(summary, for: userID, to: defaults)
         WidgetCenter.shared.reloadTimelines(ofKind: "ProductivityWidget")
     }
 
@@ -202,6 +199,8 @@ final class AuthSession {
 
     func signOut() {
         Task { await liveActivity.endAll() }
+        WidgetSummaryStorage.clearActiveUser(from: UserDefaults(suiteName: WidgetSummaryStorage.sharedGroupID))
+        WidgetCenter.shared.reloadTimelines(ofKind: "ProductivityWidget")
         do {
             try tokenStore.delete()
             accessToken = nil
