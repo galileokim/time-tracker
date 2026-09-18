@@ -26,6 +26,17 @@ struct AccountScopedTimerStoreTests {
         }
     }
 
+    @Test @MainActor func blocksSecondTimerForConfiguredAccount() throws {
+        let ownerID = UUID()
+        let underlying = EmptyTimerStore()
+        let store = AccountScopedTimerStore(store: underlying, userID: ownerID)
+        _ = try store.start(userID: ownerID, title: "First", notes: nil, categoryIDs: [], visibility: .private, startedAt: .now)
+
+        #expect(throws: TimerStoreError.timerAlreadyRunning) {
+            try store.start(userID: ownerID, title: "Second", notes: nil, categoryIDs: [], visibility: .private, startedAt: .now)
+        }
+    }
+
     @Test @MainActor func bindsNewTimerToConfiguredAccount() throws {
         let ownerID = UUID()
         let store = AccountScopedTimerStore(store: EmptyTimerStore(), userID: ownerID)
@@ -38,15 +49,19 @@ struct AccountScopedTimerStoreTests {
 
 @MainActor
 private final class EmptyTimerStore: TimerStoreProtocol {
+    private var timer: RunningTimer?
+
     func start(userID: UUID, title: String, notes: String?, categoryIDs: [UUID], visibility: ActivityVisibility, startedAt: Date) throws -> RunningTimer {
-        RunningTimer(userID: userID, title: title, notes: notes, categoryIDs: categoryIDs, visibility: visibility, startedAt: startedAt)
+        let timer = RunningTimer(userID: userID, title: title, notes: notes, categoryIDs: categoryIDs, visibility: visibility, startedAt: startedAt)
+        self.timer = timer
+        return timer
     }
 
     func stop(timerID: UUID, userID: UUID, endedAt: Date) throws -> LocalActivityLog {
         LocalActivityLog(userID: userID, title: "", notes: nil, startedAt: endedAt, endedAt: endedAt, categoryIDs: [], visibility: .private)
     }
 
-    func currentTimer(userID: UUID) throws -> RunningTimer? { nil }
+    func currentTimer(userID: UUID) throws -> RunningTimer? { timer?.userID == userID ? timer : nil }
     func pendingLogs(userID: UUID) throws -> [LocalActivityLog] { [] }
     func completedLogs(userID: UUID) throws -> [LocalActivityLog] { [] }
     func markSyncing(idempotencyKey: UUID, userID: UUID) throws {}
