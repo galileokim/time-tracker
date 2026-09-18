@@ -24,12 +24,12 @@ struct ProductivityWidgetProvider: TimelineProvider {
     }
 
     private func readEntry() -> ProductivityWidgetEntry {
-        let defaults = UserDefaults(suiteName: "group.com.timetracker.shared")
+        let snapshot = WidgetSummaryStorage.activeSnapshot(from: UserDefaults(suiteName: WidgetSummaryStorage.sharedGroupID))
         return ProductivityWidgetEntry(
             date: .now,
-            todaySeconds: defaults?.integer(forKey: "productivity.todaySeconds") ?? 0,
-            weekSeconds: defaults?.integer(forKey: "productivity.weekSeconds") ?? 0,
-            updatedAt: (defaults?.object(forKey: "productivity.updatedAt") as? Double).map { Date(timeIntervalSince1970: $0) }
+            todaySeconds: snapshot?.todaySeconds ?? 0,
+            weekSeconds: snapshot?.weekSeconds ?? 0,
+            updatedAt: snapshot?.updatedAt
         )
     }
 }
