@@ -161,14 +161,16 @@ final class TimerHomeModel {
 final class AuthSession {
     private let api: TrackerAPIClient
     private let tokenStore: KeychainTokenStore
+    private let liveActivity: LiveActivityController
     private(set) var accessToken: String?
     private(set) var user: APIUser?
     private(set) var isLoading = false
     var errorMessage: String?
 
-    init(api: TrackerAPIClient, tokenStore: KeychainTokenStore) {
+    init(api: TrackerAPIClient, tokenStore: KeychainTokenStore, liveActivity: LiveActivityController) {
         self.api = api
         self.tokenStore = tokenStore
+        self.liveActivity = liveActivity
         do {
             self.accessToken = try tokenStore.read()
         } catch {
@@ -199,6 +201,7 @@ final class AuthSession {
     }
 
     func signOut() {
+        Task { await liveActivity.endAll() }
         do {
             try tokenStore.delete()
             accessToken = nil
@@ -269,7 +272,7 @@ struct AppRootView: View {
                 }
             } else {
                 ProgressView("Opening Time Tracker")
-                    .task { session = AuthSession(api: api, tokenStore: tokenStore) }
+                    .task { session = AuthSession(api: api, tokenStore: tokenStore, liveActivity: liveActivity) }
             }
         }
     }
