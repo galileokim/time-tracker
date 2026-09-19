@@ -14,7 +14,14 @@ final class ProfileAndCategoriesModel {
     var displayName: String
     var categoryName = ""
     var errorMessage: String?
+    private(set) var failedOperation: FailedOperation?
     var successMessage: String?
+
+    enum FailedOperation {
+        case loadCategories
+        case saveProfile
+        case createCategory
+    }
 
     init(api: TrackerAPIClient, token: String, user: APIUser, onDisplayNameChanged: @escaping (String) -> Void) {
         self.api = api
@@ -28,11 +35,13 @@ final class ProfileAndCategoriesModel {
         guard !isLoading else { return }
         isLoading = true
         errorMessage = nil
+        failedOperation = nil
         defer { isLoading = false }
         do {
             categories = try await api.categories(accessToken: token)
         } catch {
             errorMessage = "Categories could not be loaded. Check your connection and try again."
+            failedOperation = .loadCategories
         }
     }
 
@@ -44,6 +53,7 @@ final class ProfileAndCategoriesModel {
         }
         isSavingProfile = true
         errorMessage = nil
+        failedOperation = nil
         successMessage = nil
         defer { isSavingProfile = false }
         do {
@@ -53,6 +63,7 @@ final class ProfileAndCategoriesModel {
             successMessage = "Profile saved."
         } catch {
             errorMessage = "Profile could not be saved. Check your connection and try again."
+            failedOperation = .saveProfile
         }
     }
 
@@ -64,6 +75,7 @@ final class ProfileAndCategoriesModel {
         }
         isCreatingCategory = true
         errorMessage = nil
+        failedOperation = nil
         successMessage = nil
         defer { isCreatingCategory = false }
         do {
@@ -73,8 +85,10 @@ final class ProfileAndCategoriesModel {
             successMessage = "Category added."
         } catch ProfileClientError.duplicateCategory {
             errorMessage = "A category with that name already exists."
+            failedOperation = .createCategory
         } catch {
             errorMessage = "Category could not be added. Check your connection and try again."
+            failedOperation = .createCategory
         }
     }
 }
@@ -146,12 +160,20 @@ struct ProfileAndCategoriesView: View {
                         }
                     }
                     if let errorMessage = model.errorMessage {
-                        Section("Could not save changes") {
+                        Section("Could not complete action") {
                             Text(errorMessage)
-                            Button("Retry loading categories") {
-                                Task { await model.load() }
+                            Button(retryTitle(for: model.failedOperation)) {
+                                Task {
+                                    switch model.failedOperation {
+                                    case .loadCategories: await model.load()
+                                    case .saveProfile: await model.saveProfile()
+                                    case .createCategory: await model.addCategory()
+                                    case nil: break
+                                    }
+                                }
                             }
                             .frame(minHeight: 44)
+                            .disabled(model.isLoading || model.isSavingProfile || model.isCreatingCategory)
                         }
                     }
                 }
@@ -161,6 +183,15 @@ struct ProfileAndCategoriesView: View {
                 ProgressView("Opening profile")
                     .task { model = ProfileAndCategoriesModel(api: api, token: token, user: user, onDisplayNameChanged: onDisplayNameChanged) }
             }
+        }
+    }
+
+    private func retryTitle(for operation: ProfileAndCategoriesModel.FailedOperation?) -> String {
+        switch operation {
+        case .loadCategories: "Retry loading categories"
+        case .saveProfile: "Retry saving profile"
+        case .createCategory: "Retry adding category"
+        case nil: "Retry"
         }
     }
 }
