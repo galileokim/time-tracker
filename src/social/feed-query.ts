@@ -1,6 +1,7 @@
 import type { Database } from "../db/client.js";
 import type { FeedEntry, FeedQuery } from "./schemas.js";
 import { decodeCursor } from "./service.js";
+import { cursorPredicateValues } from "./pagination.js";
 
 export async function getFeedFromDatabase(
   db: Database,
@@ -24,14 +25,11 @@ export async function getFeedFromDatabase(
       expression("logs.user_id", "=", userId),
       expression.and([
         expression("logs.visibility", "=", "public"),
-        expression.or([
-          expression("logs.user_id", "=", userId),
-          expression("viewer_follow.follower_id", "is not", null),
-        ]),
+        expression("viewer_follow.follower_id", "=", userId),
       ]),
       expression.and([
         expression("logs.visibility", "=", "friends_only"),
-        expression("author_follow.following_id", "is not", null),
+        expression("author_follow.following_id", "=", userId),
       ]),
     ]));
 
@@ -40,11 +38,12 @@ export async function getFeedFromDatabase(
   }
 
   if (cursor) {
+    const cursorValues = cursorPredicateValues({ createdAt: new Date(cursor.createdAt), id: cursor.id });
     feedQuery = feedQuery.where((expression) => expression.or([
-      expression("logs.created_at", "<", cursor.createdAt as never),
+      expression("logs.created_at", "<", cursorValues.createdAt as never),
       expression.and([
-        expression("logs.created_at", "=", cursor.createdAt as never),
-        expression("logs.id", "<", cursor.id),
+        expression("logs.created_at", "=", cursorValues.createdAt as never),
+        expression("logs.id", "<", cursorValues.id),
       ]),
     ]));
   }
