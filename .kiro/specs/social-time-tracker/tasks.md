@@ -102,7 +102,7 @@ Build the full product in coordinated backend and iOS slices. Begin with reprodu
   - [x] 8.1 Add sync queue worker and connectivity scheduling
     - Submit pending records with stable idempotency keys, process records independently, and preserve failures for retry.
     - _Requirements: 5.1, 5.5, 5.6, 10.1, 10.2, 10.3, 10.4_
-  - [ ]* 8.2 Add Property 3 and Property 6 tests (unit coverage exists; generated property coverage remains)
+  - [x]* 8.2 Add Property 3 and Property 6 tests (100 deterministic generated rounds; Swift Testing, no fast-check)
     - **Property 3: Idempotency-Key Retry Stability**
     - **Property 6: Sync Queue Acknowledgement Transitions**
     - Generate at least 100 cases per property for retry and success/failure transitions.
