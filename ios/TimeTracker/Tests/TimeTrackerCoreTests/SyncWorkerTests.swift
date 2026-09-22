@@ -21,6 +21,40 @@ struct SyncWorkerTests {
         #expect(store.transitionUserIDs == [userID, userID])
     }
 
+    @Test func generatedRetriesPreserveEachLogKeyAndPayload() async {
+        for round in 0..<100 {
+            let logs = (0..<3).map { index in
+                makeLog(title: "round-\(round)-log-\(index)", userID: UUID())
+            }
+            let api = RecordingLogSyncAPI(failingFirstAttemptFor: Set(logs.map(\.idempotencyKey)))
+            let acknowledged = LockedValues<UUID>()
+            let failures = LockedValues<UUID>()
+            let coordinator = LogSyncCoordinator()
+            let originalPayloads = logs.map(LogPayloadSnapshot.init)
+
+            let first = await coordinator.synchronize(
+                logs: logs,
+                api: api,
+                acknowledge: { key, _ in acknowledged.append(key) },
+                recordFailure: { key, _ in failures.append(key) }
+            )
+            let retryLogs = logs.filter { failures.values.contains($0.idempotencyKey) }
+            let second = await coordinator.synchronize(
+                logs: retryLogs,
+                api: api,
+                acknowledge: { key, _ in acknowledged.append(key) },
+                recordFailure: { key, _ in failures.append(key) }
+            )
+
+            #expect(first.syncedKeys.isEmpty)
+            #expect(first.failedKeys == logs.map(\.idempotencyKey))
+            #expect(second.failedKeys.isEmpty)
+            #expect(second.syncedKeys == logs.map(\.idempotencyKey))
+            #expect(acknowledged.values == logs.map(\.idempotencyKey))
+            #expect(api.receivedPayloads.map(LogPayloadSnapshot.init) == originalPayloads + originalPayloads)
+        }
+    }
+
     @Test func acknowledgementPersistenceFailureRecordsRetryAndContinues() async {
         let logs = [makeLog(title: "first"), makeLog(title: "second")]
         let api = StubLogSyncAPI(failingKey: nil)
@@ -122,6 +156,41 @@ private final class RecordingTimerStore: TimerStoreProtocol {
     }
 }
 
+private struct LogPayloadSnapshot: Equatable {
+    let idempotencyKey: UUID
+    let title: String
+    let startedAt: Date
+    let endedAt: Date
+    let categoryIDs: [UUID]
+    let visibility: ActivityVisibility
+
+    init(_ log: LocalActivityLog) {
+        idempotencyKey = log.idempotencyKey
+        title = log.title
+        startedAt = log.startedAt
+        endedAt = log.endedAt
+        categoryIDs = log.categoryIDs
+        visibility = log.visibility
+    }
+}
+
+private struct RecordingLogSyncAPI: LogSyncAPI {
+    let failingFirstAttemptFor: Set<UUID>
+    private let attempts = LockedValues<UUID>()
+    private let received = LockedValues<LocalActivityLog>()
+
+    var receivedPayloads: [LocalActivityLog] { received.values }
+
+    func createLog(_ log: LocalActivityLog) async throws -> UUID {
+        received.append(log)
+        let attempt = attempts.appendAndCount(log.idempotencyKey)
+        if attempt == 1, failingFirstAttemptFor.contains(log.idempotencyKey) {
+            throw APIClientError.server(statusCode: 503, code: "SERVICE_UNAVAILABLE")
+        }
+        return UUID()
+    }
+}
+
 private struct StubLogSyncAPI: LogSyncAPI {
     let failingKey: UUID?
     private let received = LockedValues<UUID>()
@@ -151,5 +220,13 @@ private final class LockedValues<Value>: @unchecked Sendable {
         lock.lock()
         storage.append(value)
         lock.unlock()
+    }
+
+    @discardableResult
+    func appendAndCount(_ value: Value) -> Int where Value: Equatable {
+        lock.lock()
+        defer { lock.unlock() }
+        storage.append(value)
+        return storage.filter { $0 == value }.count
     }
 }
