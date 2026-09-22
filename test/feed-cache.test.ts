@@ -26,8 +26,10 @@ test("Redis feed cache fans out public logs and PostgreSQL repairs misses", asyn
   const viewerId = crypto.randomUUID();
   const authorId = crypto.randomUUID();
   testUserIDs.push(viewerId, authorId);
+  let app: ReturnType<typeof buildApp> | undefined;
 
   t.after(async () => {
+    if (app) await app.close();
     if (redis.isOpen) {
       await redis.del(`feed:${viewerId}`);
       await redis.quit();
@@ -95,35 +97,20 @@ test("Redis feed cache fans out public logs and PostgreSQL repairs misses", asyn
   const publisher = new FeedDistributor(database.db, disconnectedCache, 86400);
   await assert.rejects(() => publisher.addPublicLog(logs[0]!.id), cacheError);
 
-  const app = buildApp({ config, db: database.db, redis: redis as never, logger: false });
+  app = buildApp({ config, db: database.db, redis: redis as never, logger: false });
   await app.ready();
-  t.after(() => app.close());
-  const account = await app.inject({
-    method: "POST",
-    url: "/api/v1/auth/register",
-    payload: {
-      username: `${testPrefix}-publisher`,
-      displayName: "Publisher",
-      email: `${testPrefix}-publisher@example.test`,
-      password: "correct horse battery staple",
-    },
-  });
-  assert.equal(account.statusCode, 201);
-  const login = await app.inject({
-    method: "POST",
-    url: "/api/v1/auth/login",
-    payload: {
-      username: `${testPrefix}-publisher`,
-      password: "correct horse battery staple",
-    },
-  });
+  const publisherAccount = await registerAccount(app, testPrefix, "api-publisher");
+  testUserIDs.push(publisherAccount.id);
+  const viewerAccount = await registerAccount(app, testPrefix, "api-viewer");
+  testUserIDs.push(viewerAccount.id);
+
   const publicLog = await app.inject({
     method: "POST",
     url: "/api/v1/logs",
-    headers: { authorization: `Bearer ${login.json().accessToken}` },
+    headers: { authorization: `Bearer ${publisherAccount.token}` },
     payload: {
       idempotencyKey: crypto.randomUUID(),
-      title: "Cache failure stays non-fatal",
+      title: "Visible over API after cache miss",
       startedAt: "2026-03-02T10:00:00.000Z",
       endedAt: "2026-03-02T10:10:00.000Z",
       categoryIds: [],
@@ -131,6 +118,38 @@ test("Redis feed cache fans out public logs and PostgreSQL repairs misses", asyn
     },
   });
   assert.equal(publicLog.statusCode, 201);
-  testUserIDs.push(account.json().user.id);
-  await app.close();
+
+  const follow = await app.inject({
+    method: "POST",
+    url: "/api/v1/follows",
+    headers: { authorization: `Bearer ${viewerAccount.token}` },
+    payload: { userId: publisherAccount.id },
+  });
+  assert.equal(follow.statusCode, 204);
+
+  const apiFeed = await app.inject({
+    method: "GET",
+    url: "/api/v1/feed?limit=20",
+    headers: { authorization: `Bearer ${viewerAccount.token}` },
+  });
+  assert.equal(apiFeed.statusCode, 200, apiFeed.body);
+  assert.ok(apiFeed.json().items.some((item: { title: string }) => item.title === "Visible over API after cache miss"));
 });
+
+async function registerAccount(app: ReturnType<typeof buildApp>, prefix: string, role: string) {
+  const username = `${prefix}-${role}`;
+  const password = "correct horse battery staple";
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/v1/auth/register",
+    payload: { username, displayName: role, email: `${username}@example.test`, password },
+  });
+  assert.equal(response.statusCode, 201, response.body);
+  const login = await app.inject({
+    method: "POST",
+    url: "/api/v1/auth/login",
+    payload: { username, password },
+  });
+  assert.equal(login.statusCode, 200, login.body);
+  return { id: response.json().user.id as string, token: login.json().accessToken as string };
+}
