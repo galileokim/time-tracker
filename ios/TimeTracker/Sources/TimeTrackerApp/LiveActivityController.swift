@@ -11,7 +11,7 @@ final class LiveActivityController {
     }
 
     func start(for timer: RunningTimer) async {
-        guard isSupported else { return }
+        guard LiveActivityCapability.shouldRequestActivity(activitiesEnabled: isSupported) else { return }
         await endExistingActivity()
 
         let attributes = TimerActivityAttributes(timerID: timer.id)
