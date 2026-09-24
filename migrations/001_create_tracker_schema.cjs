@@ -35,7 +35,7 @@ exports.up = (pgm) => {
     duration_seconds: {
       type: "integer",
       notNull: true,
-      expressionGenerated: "extract(epoch from (ended_at - started_at))::integer",
+      expressionGenerated: "floor(extract(epoch from (ended_at - started_at)))::integer",
     },
     visibility: { type: "varchar(20)", notNull: true, default: "public" },
     idempotency_key: { type: "uuid", notNull: true, unique: true },
