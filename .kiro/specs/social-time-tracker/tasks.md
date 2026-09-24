@@ -121,7 +121,7 @@ Build the full product in coordinated backend and iOS slices. Begin with reprodu
   - [x] 9.3 Implement paginated social feed client views
     - Load cursor pages from the API and present author, log, and category data returned under visibility rules.
     - _Requirements: 7.1, 7.2, 7.3, 7.5_
-  - [ ]* 9.4 Add system surface and feed client tests
+  - [ ]* 9.4 Add system surface and feed client tests (feed/API and Live Activity capability fallback covered; device-level ActivityKit/WidgetKit surface tests remain)
     - Test widget aggregation, timer capability fallback, feed decoding, cursor continuation, and empty/error states.
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 7.1, 7.2, 7.3, 7.5_
 
