@@ -45,7 +45,7 @@ Build the full product in coordinated backend and iOS slices. Begin with reprodu
   - [x] 4.1 Add activity log request schemas and pure domain validation
     - Enforce required fields, bounded lengths, UUID formats, visibility values, and valid timestamp ordering.
     - _Requirements: 5.7, 5.8_
-  - [ ]* 4.2 Add Property 1 and Property 2 tests
+  - [x]* 4.2 Add Property 1 and Property 2 tests (150 deterministic generated cases per property; Node test runner, no fast-check)
     - **Property 1: Activity Log Input Validation**
     - **Property 2: Duration Matches Timestamp Difference**
     - Generate at least 100 cases per property with fast-check.
@@ -53,7 +53,7 @@ Build the full product in coordinated backend and iOS slices. Begin with reprodu
   - [x] 4.3 Implement transactional log creation and duplicate resolution
     - Verify category ownership, insert log and links atomically, and resolve uniqueness races by returning the existing log.
     - _Requirements: 5.2, 5.3, 5.4, 8.6_
-  - [x]* 4.4 Add log ingestion database and API tests
+  - [x]* 4.4 Add log ingestion database and API tests (implemented; DB-backed run requires Docker services)
     - Verify successful inserts, category rollback on failure, duplicate retries, and concurrent idempotency submissions.
     - _Requirements: 5.2, 5.3, 5.4, 8.6_
 
