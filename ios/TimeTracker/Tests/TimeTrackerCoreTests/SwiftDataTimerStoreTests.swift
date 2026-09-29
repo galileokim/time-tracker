@@ -36,6 +36,26 @@ struct SwiftDataTimerStoreTests {
         #expect(try storeA.completedLogs(userID: userA).isEmpty)
     }
 
+    @Test func pendingLogSurvivesPersistentStoreReopen() throws {
+        let userID = UUID()
+        let storeURL = FileManager.default.temporaryDirectory.appending(path: "timer-store-\(UUID().uuidString).sqlite")
+        defer {
+            try? FileManager.default.removeItem(at: storeURL)
+            try? FileManager.default.removeItem(atPath: storeURL.path + "-shm")
+            try? FileManager.default.removeItem(atPath: storeURL.path + "-wal")
+        }
+        let idempotencyKey = try createPendingLogInPersistentStore(userID: userID, storeURL: storeURL)
+        let schema = Schema([StoredTimer.self, StoredActivityLog.self])
+        let reopened = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, url: storeURL)])
+        let reopenedStore = SwiftDataTimerStore(modelContext: ModelContext(reopened))
+        let pending = try reopenedStore.pendingLogs(userID: userID)
+
+        #expect(pending.map(\.idempotencyKey) == [idempotencyKey])
+        #expect(pending[0].userID == userID)
+        #expect(pending[0].title == "Durable")
+        #expect(pending[0].retryCount == 0)
+    }
+
     @Test func legacyUnownedTimerBlocksStartingAnotherAccountTimer() throws {
         let container = try makeContainer()
         let context = ModelContext(container)
@@ -47,6 +67,16 @@ struct SwiftDataTimerStoreTests {
         #expect(throws: TimerStoreError.legacyTimerNeedsReview) {
             try store.start(userID: UUID(), title: "New account", notes: nil, categoryIDs: [], visibility: .private, startedAt: .now)
         }
+    }
+
+    private func createPendingLogInPersistentStore(userID: UUID, storeURL: URL) throws -> UUID {
+        let schema = Schema([StoredTimer.self, StoredActivityLog.self])
+        let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, url: storeURL)])
+        let store = SwiftDataTimerStore(modelContext: ModelContext(container))
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let timer = try store.start(userID: userID, title: "Durable", notes: "Restart", categoryIDs: [], visibility: .private, startedAt: startedAt)
+        let log = try store.stop(timerID: timer.id, userID: userID, endedAt: startedAt.addingTimeInterval(90))
+        return log.idempotencyKey
     }
 
     private func makeContainer() throws -> ModelContainer {

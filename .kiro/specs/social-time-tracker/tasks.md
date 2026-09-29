@@ -107,7 +107,7 @@ Build the full product in coordinated backend and iOS slices. Begin with reprodu
     - **Property 6: Sync Queue Acknowledgement Transitions**
     - Generate at least 100 cases per property for retry and success/failure transitions.
     - **Validates: Requirements 5.3, 5.5, 5.6, 10.2, 10.3, 10.4**
-  - [ ]* 8.3 Add offline synchronization integration tests
+  - [x]* 8.3 Add offline synchronization integration tests (queue retries and persistent SwiftData reopen covered; simulator relaunch automation remains)
     - Test successful queue drain, intermittent failure, retry after uncertain server response, and preservation across app relaunch.
     - _Requirements: 5.1, 5.3, 5.5, 5.6, 10.1, 10.2, 10.3, 10.4, 10.5_
 
