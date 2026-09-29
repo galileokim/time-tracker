@@ -45,6 +45,7 @@ public struct TrackerAPIClient: Sendable {
         self.session = session
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
         self.encoder = encoder
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
