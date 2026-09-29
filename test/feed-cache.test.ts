@@ -118,6 +118,20 @@ test("Redis feed cache fans out public logs and PostgreSQL repairs misses", asyn
     },
   });
   assert.equal(publicLog.statusCode, 201);
+  const privateLog = await app.inject({
+    method: "POST",
+    url: "/api/v1/logs",
+    headers: { authorization: `Bearer ${publisherAccount.token}` },
+    payload: {
+      idempotencyKey: crypto.randomUUID(),
+      title: "Private API log must stay hidden",
+      startedAt: "2026-03-02T11:00:00.000Z",
+      endedAt: "2026-03-02T11:10:00.000Z",
+      categoryIds: [],
+      visibility: "private",
+    },
+  });
+  assert.equal(privateLog.statusCode, 201);
 
   const follow = await app.inject({
     method: "POST",
@@ -134,6 +148,7 @@ test("Redis feed cache fans out public logs and PostgreSQL repairs misses", asyn
   });
   assert.equal(apiFeed.statusCode, 200, apiFeed.body);
   assert.ok(apiFeed.json().items.some((item: { title: string }) => item.title === "Visible over API after cache miss"));
+  assert.ok(!apiFeed.json().items.some((item: { title: string }) => item.title === "Private API log must stay hidden"));
 });
 
 async function registerAccount(app: ReturnType<typeof buildApp>, prefix: string, role: string) {
