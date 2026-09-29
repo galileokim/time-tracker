@@ -23,7 +23,7 @@ Build the full product in coordinated backend and iOS slices. Begin with reprodu
     - Define users, categories, logs, log_categories, and follows with foreign keys, uniqueness, cascades, and indexes.
     - Derive duration in PostgreSQL from timestamps.
     - _Requirements: 2.2, 2.3, 2.4, 5.2, 8.1, 8.2, 8.3, 8.4, 8.5, 8.6_
-  - [x] 2.2 Add database integration test setup (configured; execution requires Docker services)
+  - [x] 2.2 Add database integration test setup
     - Provide disposable PostgreSQL setup for migration, transaction, constraint, and cascade tests.
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.6_
 
@@ -37,7 +37,7 @@ Build the full product in coordinated backend and iOS slices. Begin with reprodu
   - [x] 3.3 Add profile and category endpoints
     - Implement profile reads and permitted updates, plus category creation and owner-scoped listing.
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
-  - [x]* 3.4 Add profile and category integration tests (implemented; DB-backed run requires Docker services)
+  - [x]* 3.4 Add profile and category integration tests
     - Verify ownership isolation, duplicate category conflicts, and profile response fields.
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
 
@@ -53,7 +53,7 @@ Build the full product in coordinated backend and iOS slices. Begin with reprodu
   - [x] 4.3 Implement transactional log creation and duplicate resolution
     - Verify category ownership, insert log and links atomically, and resolve uniqueness races by returning the existing log.
     - _Requirements: 5.2, 5.3, 5.4, 8.6_
-  - [x]* 4.4 Add log ingestion database and API tests (implemented; DB-backed run requires Docker services)
+  - [x]* 4.4 Add log ingestion database and API tests
     - Verify successful inserts, category rollback on failure, duplicate retries, and concurrent idempotency submissions.
     - _Requirements: 5.2, 5.3, 5.4, 8.6_
 
@@ -72,7 +72,7 @@ Build the full product in coordinated backend and iOS slices. Begin with reprodu
   - [x] 5.4 Add Redis feed indexing with database fallback
     - Fan out public log IDs after database commit, hydrate candidates in batches, and fall back to PostgreSQL when cache entries are missing or stale.
     - _Requirements: 5.2, 7.3, 7.4, 7.6_
-  - [x]* 5.5 Add feed and follow integration tests (implemented; DB/Redis-backed run requires Docker services)
+  - [x]* 5.5 Add feed and follow integration tests
     - Verify feed visibility, pagination boundaries, empty pages, fan-out, and Redis outage fallback.
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 7.1, 7.2, 7.3, 7.4, 7.5, 7.6_
 
