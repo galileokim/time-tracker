@@ -132,7 +132,7 @@ Build the full product in coordinated backend and iOS slices. Begin with reprodu
   - [ ] 10.2 Wire iOS timer, local persistence, sync worker, and system surfaces (host app verified; widget extension embedding and device-level Live Activity remain)
     - Ensure timer completion feeds local persistence and synchronization, and local changes refresh ActivityKit and WidgetKit outputs.
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 4.1, 4.3, 4.4, 4.5, 5.1, 5.5, 10.1, 10.5_
-  - [ ]* 10.3 Add end-to-end contract tests and run full automated suites (full backend integration run requires Docker services)
+  - [ ]* 10.3 Add end-to-end contract tests and run full automated suites (backend API/DB/Redis contract path is covered; iOS-to-API offline sync E2E remains)
     - Exercise registration, login, offline log creation, idempotent sync, follow creation, visibility-filtered feed retrieval, and cache fallback across the client/API contract.
     - _Requirements: 1.1, 1.3, 1.5, 3.3, 5.2, 5.3, 5.5, 6.1, 6.5, 6.6, 7.1, 7.2, 7.3, 7.4, 7.6, 10.2, 10.3_
 
