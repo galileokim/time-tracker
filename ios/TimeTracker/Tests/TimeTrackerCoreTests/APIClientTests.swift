@@ -223,6 +223,25 @@ struct APIClientTests {
         }
     }
 
+    @Test func logRequestEncodesTimestampsAsISO8601() throws {
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let log = LocalActivityLog(
+            title: "Contract log",
+            notes: nil,
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(60),
+            categoryIDs: [],
+            visibility: .private
+        )
+        let client = TrackerAPIClient(baseURL: URL(string: "https://tracker.example.test")!)
+        let request = try client.encodedLogRequest(log, accessToken: "access-token")
+        let body = try #require(requestBodyData(request))
+        let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+
+        #expect(payload["startedAt"] as? String == ISO8601DateFormatter().string(from: startedAt))
+        #expect(payload["endedAt"] as? String == ISO8601DateFormatter().string(from: startedAt.addingTimeInterval(60)))
+    }
+
     @Test func failedLoginMapsStructuredServerError() async throws {
         let body = Data(#"{"error":{"code":"INVALID_CREDENTIALS","message":"Invalid username or password"}}"#.utf8)
         let client = TrackerAPIClient(
