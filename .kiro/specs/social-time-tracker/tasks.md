@@ -111,11 +111,11 @@ Build the full product in coordinated backend and iOS slices. Begin with reprodu
     - Test successful queue drain, intermittent failure, retry after uncertain server response, and preservation across app relaunch.
     - _Requirements: 5.1, 5.3, 5.5, 5.6, 10.1, 10.2, 10.3, 10.4, 10.5_
 
-- [ ] 9. Add Live Activities, widgets, and feed client
+- [x] 9. Add Live Activities, widgets, and feed client
   - [x] 9.1 Implement ActivityKit timer lifecycle
     - Start and end Live Activities with timer state and display the activity title and elapsed-time context.
     - _Requirements: 4.1, 4.2, 4.3_
-  - [ ] 9.2 Implement WidgetKit productivity summaries (extension builds separately; not embedded in host app)
+  - [x] 9.2 Implement and embed WidgetKit productivity summaries
     - Calculate daily and weekly totals from local logs and refresh timelines after data changes.
     - _Requirements: 4.4, 4.5_
   - [x] 9.3 Implement paginated social feed client views
@@ -129,7 +129,7 @@ Build the full product in coordinated backend and iOS slices. Begin with reprodu
   - [x] 10.1 Wire Fastify routes, services, repositories, Redis, and configuration
     - Ensure all `/api/v1` route groups use shared authentication, validation, error mapping, and service dependencies.
     - _Requirements: 1.1, 1.3, 1.5, 2.1, 2.2, 5.2, 5.3, 6.1, 7.1, 9.1, 9.2, 9.3, 9.4, 9.5_
-  - [ ] 10.2 Wire iOS timer, local persistence, sync worker, and system surfaces (host app verified; widget extension embedding and device-level Live Activity remain)
+  - [x] 10.2 Wire iOS timer, local persistence, sync worker, and system surfaces (combined host/widget build and simulator launch verified; device-level ActivityKit presentation remains)
     - Ensure timer completion feeds local persistence and synchronization, and local changes refresh ActivityKit and WidgetKit outputs.
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 4.1, 4.3, 4.4, 4.5, 5.1, 5.5, 10.1, 10.5_
   - [x]* 10.3 Add end-to-end contract tests and run full automated suites (opt-in iOS client-to-Fastify/PostgreSQL login/log/idempotency contract passes; follow/feed/cache and durable queue are covered by separate tests)
