@@ -8,7 +8,7 @@ let package = Package(
         .library(name: "TimeTrackerCore", targets: ["TimeTrackerCore"]),
     ],
     targets: [
-        .target(name: "TimeTrackerCore", exclude: ["TimerActivityAttributes.swift"], sources: ["TimerEngine.swift", "TimerModels.swift", "LiveActivityCapability.swift", "TimerStore.swift", "APIClient.swift", "ProfileModels.swift", "FeedModels.swift", "SocialModels.swift", "ProductivitySummary.swift", "ProductivitySummaryModel.swift", "WidgetSummaryStorage.swift", "AccountScopedTimerStore.swift", "TokenStore.swift", "SyncWorker.swift", "ConnectivityMonitor.swift"]),
-        .testTarget(name: "TimeTrackerCoreTests", dependencies: ["TimeTrackerCore"], sources: ["TimerEngineTests.swift", "APIClientTests.swift", "SyncWorkerTests.swift", "ProductivitySummaryTests.swift", "AccountScopedTimerStoreTests.swift", "WidgetSummaryStorageTests.swift", "SwiftDataTimerStoreTests.swift", "LiveActivityCapabilityTests.swift", "OfflineSyncContractTests.swift"]),
+        .target(name: "TimeTrackerCore", exclude: ["TimerActivityAttributes.swift"], sources: ["TimerEngine.swift", "TimerModels.swift", "LiveActivityCapability.swift", "TimerStore.swift", "APIClient.swift", "ProfileModels.swift", "FeedModels.swift", "SocialModels.swift", "ProductivitySummary.swift", "ProductivitySummaryModel.swift", "WidgetSummaryStorage.swift", "WidgetTimelineEntry.swift", "AccountScopedTimerStore.swift", "TokenStore.swift", "SyncWorker.swift", "ConnectivityMonitor.swift"]),
+        .testTarget(name: "TimeTrackerCoreTests", dependencies: ["TimeTrackerCore"], sources: ["TimerEngineTests.swift", "APIClientTests.swift", "SyncWorkerTests.swift", "ProductivitySummaryTests.swift", "AccountScopedTimerStoreTests.swift", "WidgetSummaryStorageTests.swift", "SwiftDataTimerStoreTests.swift", "LiveActivityCapabilityTests.swift", "OfflineSyncContractTests.swift", "WidgetTimelineEntryTests.swift"]),
     ]
 )
