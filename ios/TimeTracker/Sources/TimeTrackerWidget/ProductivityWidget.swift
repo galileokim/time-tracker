@@ -2,15 +2,13 @@ import SwiftUI
 import WidgetKit
 
 struct ProductivityWidgetEntry: TimelineEntry {
-    let date: Date
-    let todaySeconds: Int
-    let weekSeconds: Int
-    let updatedAt: Date?
+    let summary: WidgetTimelineEntry
+    var date: Date { summary.date }
 }
 
 struct ProductivityWidgetProvider: TimelineProvider {
     func placeholder(in context: Context) -> ProductivityWidgetEntry {
-        ProductivityWidgetEntry(date: .now, todaySeconds: 0, weekSeconds: 0, updatedAt: nil)
+        ProductivityWidgetEntry(summary: WidgetTimelineEntry(date: .now, snapshot: nil))
     }
 
     func getSnapshot(in context: Context, completion: @escaping (ProductivityWidgetEntry) -> Void) {
@@ -25,12 +23,7 @@ struct ProductivityWidgetProvider: TimelineProvider {
 
     private func readEntry() -> ProductivityWidgetEntry {
         let snapshot = WidgetSummaryStorage.activeSnapshot(from: UserDefaults(suiteName: WidgetSummaryStorage.sharedGroupID))
-        return ProductivityWidgetEntry(
-            date: .now,
-            todaySeconds: snapshot?.todaySeconds ?? 0,
-            weekSeconds: snapshot?.weekSeconds ?? 0,
-            updatedAt: snapshot?.updatedAt
-        )
+        return ProductivityWidgetEntry(summary: WidgetTimelineEntry(date: .now, snapshot: snapshot))
     }
 }
 
@@ -43,11 +36,11 @@ struct ProductivityWidget: Widget {
                 Text("Time Tracker")
                     .font(.headline)
                 HStack(alignment: .firstTextBaseline, spacing: 16) {
-                    total(title: "Today", seconds: entry.todaySeconds)
-                    total(title: "This week", seconds: entry.weekSeconds)
+                    total(title: "Today", seconds: entry.summary.todaySeconds)
+                    total(title: "This week", seconds: entry.summary.weekSeconds)
                 }
                 Spacer(minLength: 0)
-                if let updatedAt = entry.updatedAt {
+                if let updatedAt = entry.summary.updatedAt {
                     Text("Updated \(updatedAt, style: .relative) ago")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
