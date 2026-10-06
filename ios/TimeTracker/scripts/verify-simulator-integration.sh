@@ -32,6 +32,12 @@ if [[ "$EXTENSION_POINT" != "com.apple.widgetkit-extension" ]]; then
 fi
 
 plutil -lint "$PROJECT_DIR/TimeTracker.entitlements" "$PROJECT_DIR/TimeTrackerWidgets.entitlements" >/dev/null
+HOST_GROUP=$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.application-groups:0' "$PROJECT_DIR/TimeTracker.entitlements")
+WIDGET_GROUP=$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.application-groups:0' "$PROJECT_DIR/TimeTrackerWidgets.entitlements")
+if [[ "$HOST_GROUP" != "$WIDGET_GROUP" || "$HOST_GROUP" != "group.com.timetracker.shared" ]]; then
+  printf 'App Group mismatch: host=%s widget=%s\n' "$HOST_GROUP" "$WIDGET_GROUP" >&2
+  exit 1
+fi
 
 xcrun simctl install "$DEVICE_ID" "$APP"
 xcrun simctl launch "$DEVICE_ID" com.timetracker.app
