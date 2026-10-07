@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import test from "node:test";
 
 const require = createRequire(import.meta.url);
-const migration = require("../migrations/001_create_tracker_schema.cjs") as {
+const migration = require("../src/db/migrations/001_create_tracker_schema.cjs") as {
   up: (builder: unknown) => void;
   down: (builder: unknown) => void;
 };

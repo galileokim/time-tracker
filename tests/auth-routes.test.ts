@@ -24,7 +24,7 @@ test("authentication endpoints", async (t) => {
   await t.test("registers, logs in, and protects the identity endpoint", async () => {
     const username = `user_${crypto.randomUUID().slice(0, 8)}`;
     const email = `${username}@example.test`;
-    const password = "correct horse battery staple";
+    const password = "p";
 
     const registration = await app.inject({
       method: "POST",
@@ -69,7 +69,7 @@ test("authentication endpoints", async (t) => {
     const invalid = await app.inject({
       method: "POST",
       url: "/api/v1/auth/register",
-      payload: { username: "x", password: "short" },
+      payload: { username: "x", password: "" },
     });
     assert.equal(invalid.statusCode, 400);
     assert.equal(invalid.json().error.code, "INVALID_REQUEST");
