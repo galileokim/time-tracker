@@ -3,7 +3,7 @@ import { z } from "zod";
 const usernameSchema = z.string().trim().min(3).max(50).regex(/^[a-zA-Z0-9_.-]+$/);
 const displayNameSchema = z.string().trim().min(1).max(100);
 const emailSchema = z.email().trim().max(255).transform((email) => email.toLowerCase());
-const passwordSchema = z.string().min(12).max(128);
+const passwordSchema = z.string().min(1).max(128);
 
 export const registerSchema = z.object({
   username: usernameSchema,
