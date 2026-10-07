@@ -7,14 +7,14 @@
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test test/*.test.ts",
+    "test": "tsx --test tests/*.test.ts",
     "db:migrate": "node-pg-migrate up",
     "db:rollback": "node-pg-migrate down"
   },
   "node-pg-migrate": {
     "migrationsTable": "pgmigrations",
     "migrationsSchema": "public",
-    "migrationsDir": "migrations"
+    "migrationsDir": "src/db/migrations"
   },
   "dependencies": {
     "@fastify/jwt": "^10.2.5",
