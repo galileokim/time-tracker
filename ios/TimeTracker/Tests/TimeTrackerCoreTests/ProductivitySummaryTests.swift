@@ -3,14 +3,25 @@ import Testing
 @testable import TimeTrackerCore
 
 struct ProductivitySummaryTests {
+    @Test(arguments: [
+        (3, false, "3 seconds"),
+        (65, false, "1 minute, 5 seconds"),
+        (3_661, false, "1 hour, 1 minute, 1 second"),
+        (90_061, true, "1 day, 1 hour, 1 minute, 1 second"),
+        (90_061, false, "25 hours, 1 minute, 1 second"),
+    ])
+    func formatsAnalyticsDurations(seconds: Int, includesDays: Bool, expected: String) {
+        #expect(AnalyticsDurationFormatter.format(seconds, includesDays: includesDays) == expected)
+    }
+
     @Test func sharedSummaryModelCalculatesCalendarTotals() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         let now = date("2026-02-11T12:00:00Z")
         let categoryID = UUID()
         let summary = ProductivitySummary(logs: [
-            ProductivitySummaryLog(endedAt: date("2026-02-11T10:00:00Z"), durationSeconds: 3_600, categoryIDs: [categoryID]),
-            ProductivitySummaryLog(endedAt: date("2026-02-09T10:30:00Z"), durationSeconds: 5_400, categoryIDs: [categoryID]),
+            ProductivitySummaryLog(startedAt: date("2026-02-11T09:00:00Z"), endedAt: date("2026-02-11T10:00:00Z"), categoryIDs: [categoryID]),
+            ProductivitySummaryLog(startedAt: date("2026-02-09T09:00:00Z"), endedAt: date("2026-02-09T10:30:00Z"), categoryIDs: [categoryID]),
         ], now: now, calendar: calendar)
 
         #expect(summary.todaySeconds == 3_600)
@@ -18,7 +29,7 @@ struct ProductivitySummaryTests {
         #expect(summary.categorySeconds[categoryID] == 9_000)
     }
 
-    @Test func totalsIncludeOnlySyncedLogsWithinCalendarPeriods() {
+    @Test func totalsIncludeOnlyLogsWithinCalendarPeriods() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         let now = date("2026-02-11T12:00:00Z")
@@ -42,10 +53,40 @@ struct ProductivitySummaryTests {
         let startedAt = date(start)
         let endedAt = date(end)
         return ProductivitySummaryLog(
+            startedAt: startedAt,
             endedAt: endedAt,
-            durationSeconds: Int(endedAt.timeIntervalSince(startedAt)),
             categoryIDs: categories
         )
+    }
+
+    @Test func multipleShortLogsAccumulateWithoutPerLogRoundingLoss() {
+        let start = date("2026-02-11T10:00:00Z")
+        let logs = (0..<4).map { index in
+            ProductivitySummaryLog(
+                startedAt: start.addingTimeInterval(Double(index * 4)),
+                endedAt: start.addingTimeInterval(Double(index * 4 + 3)),
+                categoryIDs: []
+            )
+        }
+        let summary = ProductivitySummary(logs: logs, now: date("2026-02-11T12:00:00Z"))
+
+        #expect(summary.allTimeSeconds == 12)
+        #expect(summary.todaySeconds == 12)
+    }
+
+    @Test func aTimerCrossingMidnightContributesOnlyItsOverlapToToday() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let startedAt = date("2026-02-10T23:59:00Z")
+        let endedAt = date("2026-02-11T00:02:00Z")
+        let summary = ProductivitySummary(
+            logs: [ProductivitySummaryLog(startedAt: startedAt, endedAt: endedAt, categoryIDs: [])],
+            now: date("2026-02-11T12:00:00Z"),
+            calendar: calendar
+        )
+
+        #expect(summary.todaySeconds == 120)
+        #expect(summary.weekSeconds == 180)
     }
 
     private func date(_ value: String) -> Date {
