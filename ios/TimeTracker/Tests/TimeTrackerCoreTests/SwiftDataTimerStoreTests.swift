@@ -36,6 +36,33 @@ struct SwiftDataTimerStoreTests {
         #expect(try storeA.completedLogs(userID: userA).isEmpty)
     }
 
+    @Test func stoppingTimerPersistsExactDurationAsPendingLog() throws {
+        let userID = UUID()
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let container = try makeContainer()
+        let store = SwiftDataTimerStore(modelContext: ModelContext(container))
+        let timer = try store.start(
+            userID: userID,
+            title: "Focused work",
+            notes: nil,
+            categoryIDs: [],
+            visibility: .private,
+            startedAt: startedAt
+        )
+
+        let log = try store.stop(
+            timerID: timer.id,
+            userID: userID,
+            endedAt: startedAt.addingTimeInterval(125)
+        )
+
+        #expect(log.durationSeconds == 125)
+        #expect(try store.currentTimer(userID: userID) == nil)
+        #expect(try store.pendingLogs(userID: userID).map(\.idempotencyKey) == [log.idempotencyKey])
+        #expect(try store.completedLogs(userID: userID).isEmpty)
+        #expect(try store.allLogs(userID: userID).map(\.idempotencyKey) == [log.idempotencyKey])
+    }
+
     @Test func pendingLogSurvivesPersistentStoreReopen() throws {
         let userID = UUID()
         let storeURL = FileManager.default.temporaryDirectory.appending(path: "timer-store-\(UUID().uuidString).sqlite")
@@ -49,7 +76,9 @@ struct SwiftDataTimerStoreTests {
         let reopened = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, url: storeURL)])
         let reopenedStore = SwiftDataTimerStore(modelContext: ModelContext(reopened))
         let pending = try reopenedStore.pendingLogs(userID: userID)
+        let allLogs = try reopenedStore.allLogs(userID: userID)
 
+        #expect(allLogs.map(\.idempotencyKey) == [idempotencyKey])
         #expect(pending.map(\.idempotencyKey) == [idempotencyKey])
         #expect(pending[0].userID == userID)
         #expect(pending[0].title == "Durable")

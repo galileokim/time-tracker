@@ -139,6 +139,8 @@ private final class RecordingTimerStore: TimerStoreProtocol {
         return [log]
     }
 
+    func allLogs(userID: UUID) throws -> [LocalActivityLog] { [log] }
+
     func completedLogs(userID: UUID) throws -> [LocalActivityLog] { [] }
 
     func markSyncing(idempotencyKey: UUID, userID: UUID) throws {

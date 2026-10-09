@@ -63,6 +63,7 @@ private final class EmptyTimerStore: TimerStoreProtocol {
 
     func currentTimer(userID: UUID) throws -> RunningTimer? { timer?.userID == userID ? timer : nil }
     func pendingLogs(userID: UUID) throws -> [LocalActivityLog] { [] }
+    func allLogs(userID: UUID) throws -> [LocalActivityLog] { [] }
     func completedLogs(userID: UUID) throws -> [LocalActivityLog] { [] }
     func markSyncing(idempotencyKey: UUID, userID: UUID) throws {}
     func updatePendingLog(idempotencyKey: UUID, userID: UUID, title: String, notes: String?, categoryIDs: [UUID], visibility: ActivityVisibility) throws {}
