@@ -47,6 +47,11 @@ public final class AccountScopedTimerStore: TimerStoreProtocol {
         return try store.pendingLogs(userID: userID)
     }
 
+    public func allLogs(userID requestedUserID: UUID) throws -> [LocalActivityLog] {
+        guard requestedUserID == userID else { throw TimerStoreError.accountMismatch }
+        return try store.allLogs(userID: userID)
+    }
+
     public func completedLogs(userID requestedUserID: UUID) throws -> [LocalActivityLog] {
         guard requestedUserID == userID else { throw TimerStoreError.accountMismatch }
         return try store.completedLogs(userID: userID)

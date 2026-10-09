@@ -124,6 +124,7 @@ public protocol TimerStoreProtocol {
     func stop(timerID: UUID, userID: UUID, endedAt: Date) throws -> LocalActivityLog
     func currentTimer(userID: UUID) throws -> RunningTimer?
     func pendingLogs(userID: UUID) throws -> [LocalActivityLog]
+    func allLogs(userID: UUID) throws -> [LocalActivityLog]
     func completedLogs(userID: UUID) throws -> [LocalActivityLog]
     func markSyncing(idempotencyKey: UUID, userID: UUID) throws
     func updatePendingLog(idempotencyKey: UUID, userID: UUID, title: String, notes: String?, categoryIDs: [UUID], visibility: ActivityVisibility) throws
@@ -210,6 +211,14 @@ public final class SwiftDataTimerStore: TimerStoreProtocol {
             }
             return log
         }
+    }
+
+    public func allLogs(userID: UUID) throws -> [LocalActivityLog] {
+        let descriptor = FetchDescriptor<StoredActivityLog>(
+            predicate: #Predicate { $0.userID == userID },
+            sortBy: [SortDescriptor(\.startedAt, order: .reverse)]
+        )
+        return try modelContext.fetch(descriptor).compactMap(\.activityLog)
     }
 
     public func completedLogs(userID: UUID) throws -> [LocalActivityLog] {
