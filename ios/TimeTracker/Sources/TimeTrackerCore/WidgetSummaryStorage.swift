@@ -14,7 +14,7 @@ public struct WidgetSummarySnapshot: Equatable, Sendable {
 
 public enum WidgetSummaryStorage {
     public static let activeUserIDKey = "productivity.activeUserID"
-    public static let sharedGroupID = "group.com.timetracker.shared"
+    public static let sharedGroupID = "group.com.galileotimetracker.app"
 
     public static func storageKeys(for userID: UUID) -> (today: String, week: String, updatedAt: String) {
         let prefix = "productivity.\(userID.uuidString)."
