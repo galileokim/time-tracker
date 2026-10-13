@@ -1,4 +1,4 @@
-import SwiftData
+    import SwiftData
 import SwiftUI
 import Network
 import WidgetKit
@@ -13,7 +13,7 @@ struct TimeTrackerApp: App {
         let schema = Schema([StoredTimer.self, StoredActivityLog.self])
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
         container = try! ModelContainer(for: schema, configurations: [configuration])
-        let apiURL = URL(string: ProcessInfo.processInfo.environment["TRACKER_API_URL"] ?? "http://localhost:3000")!
+        let apiURL = URL(string: "http://127.0.0.1:3000")!
         api = TrackerAPIClient(baseURL: apiURL)
         tokenStore = KeychainTokenStore()
     }
@@ -34,29 +34,36 @@ final class TimerHomeModel {
     private let liveActivity: LiveActivityController
     private let tokenProvider: @Sendable () async -> String?
     private let userID: UUID
+    private let onAuthenticationExpired: (() -> Void)?
     private(set) var runningTimer: RunningTimer?
     private(set) var pendingLogCount = 0
     private(set) var syncInProgress = false
+    private(set) var lastSavedDurationSeconds: Int?
+    private(set) var lastSaveRequiresAuthentication = false
     private(set) var activityState: TimerActivityAttributes.ContentState?
-    var title = ""
-    var selectedCategoryIDs: Set<UUID> = []
+    var selectedCategoryID: UUID?
+    var newCategoryName = ""
     var visibility: ActivityVisibility = .public
     var errorMessage: String?
     private(set) var completedLogs: [LocalActivityLog] = []
+    private(set) var recordedLogs: [LocalActivityLog] = []
     private(set) var categories: [APICategory] = []
+    private(set) var isCreatingCategory = false
 
     init(
         modelContext: ModelContext,
         api: TrackerAPIClient,
         liveActivity: LiveActivityController,
         userID: UUID,
-        tokenProvider: @escaping @Sendable () async -> String?
+        tokenProvider: @escaping @Sendable () async -> String?,
+        onAuthenticationExpired: (() -> Void)? = nil
     ) {
         self.modelContext = modelContext
         self.api = api
         self.liveActivity = liveActivity
         self.userID = userID
         self.tokenProvider = tokenProvider
+        self.onAuthenticationExpired = onAuthenticationExpired
         refresh()
         refreshProductivityWidget()
     }
@@ -67,17 +74,22 @@ final class TimerHomeModel {
 
     func start(at date: Date = .now) {
         do {
+            guard let category = categories.first(where: { $0.id == selectedCategoryID }) else {
+                errorMessage = "Choose or add a category before starting."
+                return
+            }
             let timer = try accountStore.start(
                 userID: userID,
-                title: title,
+                title: category.name,
                 notes: nil,
-                categoryIDs: Array(selectedCategoryIDs),
+                categoryIDs: [category.id],
                 visibility: visibility,
                 startedAt: date
             )
             runningTimer = timer
-            title = ""
-            selectedCategoryIDs = []
+            selectedCategoryID = nil
+            lastSavedDurationSeconds = nil
+            lastSaveRequiresAuthentication = false
             errorMessage = nil
             Task {
                 await liveActivity.start(for: timer)
@@ -92,7 +104,9 @@ final class TimerHomeModel {
         guard let runningTimer else { return }
         do {
             let timerID = runningTimer.id
-            _ = try accountStore.stop(timerID: timerID, userID: userID, endedAt: date)
+            let log = try accountStore.stop(timerID: timerID, userID: userID, endedAt: date)
+            lastSavedDurationSeconds = log.durationSeconds
+            lastSaveRequiresAuthentication = false
             refresh()
             refreshProductivityWidget()
             errorMessage = nil
@@ -102,7 +116,7 @@ final class TimerHomeModel {
                 await synchronize()
             }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = "Timer could not be saved: \(error.localizedDescription)"
         }
     }
 
@@ -112,6 +126,7 @@ final class TimerHomeModel {
             runningTimer = try store.currentTimer(userID: userID)
             pendingLogCount = try modelContext.fetchCount(FetchDescriptor<StoredActivityLog>(predicate: #Predicate { $0.userID == userID && ($0.syncStateRawValue == "pending" || $0.syncStateRawValue == "syncing") }))
             completedLogs = try store.completedLogs(userID: userID)
+            recordedLogs = try store.allLogs(userID: userID)
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
@@ -128,12 +143,40 @@ final class TimerHomeModel {
         defer { syncInProgress = false }
         do {
             let worker = OfflineSyncWorker(store: accountStore, api: api, userID: userID) { token }
-            _ = try await worker.synchronize()
+            let report = try await worker.synchronize()
             refresh()
             refreshProductivityWidget()
+            if !report.failedKeys.isEmpty {
+                let retryableLogs = try accountStore.pendingLogs(userID: userID)
+                let details = retryableLogs.compactMap(\.lastSyncError).first
+                errorMessage = if let details {
+                    "\(report.failedKeys.count) saved log(s) could not sync: \(details)"
+                } else {
+                    "\(report.failedKeys.count) saved log(s) could not sync. They remain on this device; tap Sync now to retry."
+                }
+                refreshPendingLogCount()
+            }
             await reloadCategories(token: token)
+        } catch let error as APIClientError {
+            if case .server(401, _) = error {
+                errorMessage = "Session expired. Sign in again to sync the saved timer."
+                lastSaveRequiresAuthentication = true
+                onAuthenticationExpired?()
+            } else {
+                errorMessage = "Sync could not start. Your logs remain saved on this device. \(error.localizedDescription)"
+            }
+            refreshPendingLogCount()
         } catch {
-            errorMessage = "Sync could not start. Your logs remain saved on this device."
+            errorMessage = "Sync could not start. Your logs remain saved on this device. \(error.localizedDescription)"
+            refreshPendingLogCount()
+        }
+    }
+
+    private func refreshPendingLogCount() {
+        do {
+            pendingLogCount = try modelContext.fetchCount(FetchDescriptor<StoredActivityLog>(predicate: #Predicate { $0.userID == userID && ($0.syncStateRawValue == "pending" || $0.syncStateRawValue == "syncing") }))
+        } catch {
+            errorMessage = "Saved logs are unavailable: \(error.localizedDescription)"
         }
     }
 
@@ -144,9 +187,37 @@ final class TimerHomeModel {
         WidgetCenter.shared.reloadTimelines(ofKind: "ProductivityWidget")
     }
 
+    func addCategory() async {
+        let name = newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            errorMessage = "Enter a category name."
+            return
+        }
+        guard let token = await tokenProvider() else {
+            errorMessage = "Sign in again to add a category."
+            return
+        }
+        isCreatingCategory = true
+        defer { isCreatingCategory = false }
+        do {
+            let category = try await api.createCategory(name: name, accessToken: token)
+            categories.append(category)
+            selectedCategoryID = category.id
+            newCategoryName = ""
+            errorMessage = nil
+        } catch ProfileClientError.duplicateCategory {
+            errorMessage = "That category already exists. Choose it from the list."
+        } catch {
+            errorMessage = "Category could not be added. Check your connection and try again."
+        }
+    }
+
     func reloadCategories(token: String) async {
         do {
             categories = try await api.categories(accessToken: token)
+            if selectedCategoryID == nil {
+                selectedCategoryID = categories.first?.id
+            }
         } catch {
             errorMessage = "Categories could not be refreshed."
         }
@@ -243,7 +314,16 @@ final class AuthSession {
             try await operation()
         } catch let error as APIClientError {
             switch error {
-            case .server(_, let code): errorMessage = code == "INVALID_CREDENTIALS" ? "Username or password is incorrect." : "Sign-in failed (\(code))."
+            case .server(let statusCode, let code):
+                if code == "INVALID_CREDENTIALS" {
+                    errorMessage = "Username or password is incorrect."
+                } else if code == "INVALID_REQUEST" {
+                    errorMessage = "Check the fields: usernames need 3 to 50 letters, numbers, dots, underscores, or hyphens; password cannot be empty; and email must be valid."
+                } else if statusCode == 409 {
+                    errorMessage = "That username or email is already in use."
+                } else {
+                    errorMessage = "Request failed (\(statusCode), \(code)). Check the fields and try again."
+                }
             case .invalidResponse, .decoding: errorMessage = "The server returned an unreadable response."
             }
         } catch {
@@ -287,7 +367,8 @@ struct AuthenticationView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            ScrollViewReader { proxy in
+                Form {
                 Section("Account") {
                     TextField("Username", text: $username)
                         .textInputAutocapitalization(.never)
@@ -300,18 +381,21 @@ struct AuthenticationView: View {
                             .autocorrectionDisabled()
                     }
                     SecureField("Password", text: $password)
-                }
-                Section {
-                    Button(isRegistering ? "Create account" : "Sign in") {
-                        Task {
-                            if isRegistering {
-                                await session.register(username: username, displayName: displayName, email: email, password: password)
-                            } else {
-                                await session.login(username: username, password: password)
-                            }
-                        }
+                    if isRegistering {
+                        Text("Password is required.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .id("registration-guidance")
                     }
-                    .disabled(session.isLoading)
+                }
+                .textFieldStyle(.roundedBorder)
+                Section {
+                    if !isRegistering {
+                        Button("Sign in") {
+                            Task { await session.login(username: username, password: password) }
+                        }
+                        .disabled(session.isLoading)
+                    }
 
                     Button(isRegistering ? "I already have an account" : "Create an account") {
                         isRegistering.toggle()
@@ -325,18 +409,60 @@ struct AuthenticationView: View {
                 if let errorMessage = session.errorMessage {
                     Text(errorMessage)
                         .foregroundStyle(.red)
+                        .accessibilityAddTraits(.updatesFrequently)
                 }
+                }
+                .scrollDismissesKeyboard(.interactively)
+                .onChange(of: username) { _, _ in session.errorMessage = nil }
+                .onChange(of: password) { _, _ in session.errorMessage = nil }
+                .onChange(of: displayName) { _, _ in session.errorMessage = nil }
+                .onChange(of: email) { _, _ in session.errorMessage = nil }
+                .onChange(of: isRegistering) { _, _ in
+                    session.errorMessage = nil
+                }
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    if isRegistering {
+                        Button {
+                            Task {
+                                await session.register(username: username, displayName: displayName, email: email, password: password)
+                            }
+                        } label: {
+                            if session.isLoading {
+                                ProgressView("Creating account")
+                                    .frame(maxWidth: .infinity, minHeight: 50)
+                            } else {
+                                Text("Create account")
+                                    .frame(maxWidth: .infinity, minHeight: 50)
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(session.isLoading)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 8)
+                        .padding(.bottom, 8)
+                        .background(.bar)
+                    }
+                }
+                .navigationTitle(isRegistering ? "Create account" : "Welcome back")
             }
-            .navigationTitle(isRegistering ? "Create account" : "Welcome back")
         }
     }
+}
+
+private enum TrackerTab: Hashable {
+    case log
+    case timer
+    case analytics
+    case profile
 }
 
 struct TimerHomeView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @State private var model: TimerHomeModel?
+    @State private var selectedTab = TrackerTab.timer
     @State private var now = Date.now
+    @State private var showTimerSaveAlert = false
     let api: TrackerAPIClient
     let token: String
     let user: APIUser
@@ -351,14 +477,15 @@ struct TimerHomeView: View {
             } else {
                 ProgressView("Opening your timer")
                     .task {
-                        let timerModel = TimerHomeModel(modelContext: modelContext, api: api, liveActivity: liveActivity, userID: user.id) { token }
+                        let timerModel = TimerHomeModel(modelContext: modelContext, api: api, liveActivity: liveActivity, userID: user.id, tokenProvider: { token }) {
+                            onSignOut()
+                        }
                         model = timerModel
                         await timerModel.synchronize()
                         await timerModel.reloadCategories(token: token)
                     }
             }
         }
-        .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(uiColor: .systemGroupedBackground))
         .task {
@@ -377,128 +504,241 @@ struct TimerHomeView: View {
                 Task { await model?.synchronize() }
             }
         }
+        .alert("Timer could not be saved", isPresented: $showTimerSaveAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model?.errorMessage ?? "Try stopping the timer again.")
+        }
+        .onChange(of: model?.errorMessage) { _, message in
+            if message?.hasPrefix("Timer could not be saved:") == true {
+                showTimerSaveAlert = true
+            }
+        }
     }
 
     @ViewBuilder
     private func content(_ model: TimerHomeModel) -> some View {
-        NavigationStack {
-            VStack(spacing: 24) {
-                HStack {
+        TabView(selection: $selectedTab) {
+            NavigationStack {
+                ActivityLogView(logs: model.recordedLogs, api: api, token: token)
+            }
+            .tabItem {
+                Label("Log", systemImage: "list.bullet.rectangle")
+            }
+            .tag(TrackerTab.log)
+
+            NavigationStack {
+                timerContent(model)
+            }
+            .tabItem {
+                Label("Timer", systemImage: "timer")
+            }
+            .tag(TrackerTab.timer)
+
+            NavigationStack {
+                ProductivitySummaryView(
+                    summary: ProductivitySummary(logs: model.recordedLogs.map(\.productivitySummaryLog), now: now),
+                    hasRecordedLogs: !model.recordedLogs.isEmpty,
+                    categories: model.categories
+                )
+                .padding(20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background(Color(uiColor: .systemGroupedBackground))
+                .navigationTitle("Analytics")
+            }
+            .tabItem {
+                Label("Analytics", systemImage: "chart.bar")
+            }
+            .tag(TrackerTab.analytics)
+
+            NavigationStack {
+                ProfileAndCategoriesView(api: api, token: token, user: user, onDisplayNameChanged: onDisplayNameChanged)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Sign out", action: onSignOut)
+                        }
+                    }
+            }
+            .tabItem {
+                Label("Profile", systemImage: "person.crop.circle")
+            }
+            .tag(TrackerTab.profile)
+        }
+        .tint(.orange)
+    }
+
+    private func timerContent(_ model: TimerHomeModel) -> some View {
+        ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
                     Text("Time Tracker")
                         .font(.largeTitle.weight(.semibold))
-                    Spacer()
-                    NavigationLink("Profile") {
-                        ProfileAndCategoriesView(api: api, token: token, user: user, onDisplayNameChanged: onDisplayNameChanged)
-                    }
-                    NavigationLink("Activity") {
-                        SocialFeedView(api: api, token: token)
-                    }
-                    Button("Sign out", action: onSignOut)
-                        .font(.subheadline)
-                }
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
 
-            if let timer = model.runningTimer {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(timer.title)
-                        .font(.title2.weight(.medium))
-                    Text(timer.visibility == .friendsOnly ? "Friends only" : timer.visibility.rawValue.capitalized)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if !timer.categoryIDs.isEmpty {
-                        Text(timer.categoryIDs.compactMap { id in model.categories.first(where: { $0.id == id })?.name }.joined(separator: ", "))
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                    if let timer = model.runningTimer {
+                        runningTimer(timer, model: model)
+                    } else {
+                        timerForm(model)
                     }
-                    Text(Duration.seconds(timer.elapsedSeconds(at: now)), format: .time(pattern: .hourMinuteSecond))
-                        .font(.system(size: 48, weight: .regular, design: .rounded).monospacedDigit())
-                        .contentTransition(.numericText())
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
 
-                Button(action: { model.stop() }) {
-                    Text("Stop timer")
-                        .frame(maxWidth: .infinity, minHeight: 52)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.orange)
-            } else {
-                TextField("What are you working on?", text: Binding(
-                    get: { model.title },
-                    set: { model.title = $0 }
-                ))
-                .textFieldStyle(.roundedBorder)
-                .textInputAutocapitalization(.sentences)
-
-                if !model.categories.isEmpty {
-                    Menu("Categories: \(model.selectedCategoryIDs.count)") {
-                        ForEach(model.categories) { category in
-                            Button {
-                                if model.selectedCategoryIDs.contains(category.id) {
-                                    model.selectedCategoryIDs.remove(category.id)
-                                } else {
-                                    model.selectedCategoryIDs.insert(category.id)
+                    if let duration = model.lastSavedDurationSeconds {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Label("Saved \(Duration.seconds(duration), format: .time(pattern: .hourMinuteSecond)) on this device", systemImage: "checkmark.circle.fill")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.green)
+                            if model.lastSaveRequiresAuthentication {
+                                Text("Sign in again, then tap Sync now to upload this log.")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                Button("Sign in again", action: onSignOut)
+                                    .frame(minHeight: 44)
+                            } else if model.pendingLogCount > 0 {
+                                Text("It will appear in your recorded totals after syncing.")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                Button(model.syncInProgress ? "Syncing" : "Sync now") {
+                                    Task { await model.synchronize() }
                                 }
-                            } label: {
-                                if model.selectedCategoryIDs.contains(category.id) {
-                                    Label(category.name, systemImage: "checkmark")
-                                } else {
-                                    Text(category.name)
-                                }
+                                .disabled(model.syncInProgress)
+                                .frame(minHeight: 44)
                             }
                         }
                     }
-                    .frame(minHeight: 44)
-                }
 
-                Picker("Visibility", selection: Binding(
-                    get: { model.visibility },
-                    set: { model.visibility = $0 }
-                )) {
-                    Text("Public").tag(ActivityVisibility.public)
-                    Text("Friends").tag(ActivityVisibility.friendsOnly)
-                    Text("Private").tag(ActivityVisibility.private)
-                }
-                .pickerStyle(.segmented)
-
-                Button(action: { model.start() }) {
-                    Text("Start timer")
-                        .frame(maxWidth: .infinity, minHeight: 52)
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(model.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-
-            ProductivitySummaryView(
-                summary: ProductivitySummary(logs: model.completedLogs.map(\.productivitySummaryLog), now: now),
-                categories: model.categories
-            )
-
-            if let state = model.activityState {
-                LiveTimerLockScreenView(state: state)
-                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
-            }
-
-            if model.pendingLogCount > 0 {
-                HStack {
-                    Text("\(model.pendingLogCount) logs waiting to sync")
-                    Spacer()
-                    Button(model.syncInProgress ? "Syncing" : "Sync now") {
-                        Task { await model.synchronize() }
+                    if let errorMessage = model.errorMessage {
+                        Text(errorMessage)
+                            .font(.callout)
+                            .foregroundStyle(.red)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .disabled(model.syncInProgress)
+
+                    if let state = model.activityState {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Live Activity preview")
+                                .font(.headline)
+                            LiveTimerLockScreenView(state: state)
+                                .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+                        }
+                    }
+
+                    if model.pendingLogCount > 0 && model.lastSavedDurationSeconds == nil {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("\(model.pendingLogCount) saved logs waiting to sync")
+                                .font(.subheadline)
+                            Button(model.syncInProgress ? "Syncing" : "Sync now") {
+                                Task { await model.synchronize() }
+                            }
+                            .disabled(model.syncInProgress)
+                            .frame(minHeight: 44)
+                        }
+                    }
+
                 }
-                .font(.subheadline)
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 28)
+                .frame(maxWidth: 560)
+                .frame(maxWidth: .infinity)
+            }
+            .background(Color(uiColor: .systemGroupedBackground))
+    }
+
+    private func runningTimer(_ timer: RunningTimer, model: TimerHomeModel) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Timer running")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+            Text(model.categories.first(where: { $0.id == timer.categoryIDs.first })?.name ?? timer.title)
+                .font(.title2.weight(.semibold))
+                .fixedSize(horizontal: false, vertical: true)
+            Text(Duration.seconds(timer.elapsedSeconds(at: now)), format: .time(pattern: .hourMinuteSecond))
+                .font(.system(size: 44, weight: .regular, design: .rounded).monospacedDigit())
+                .contentTransition(.numericText())
+                .accessibilityLabel("Elapsed time")
+            HStack(spacing: 8) {
+                Text(timer.visibility == .friendsOnly ? "Friends only" : timer.visibility.rawValue.capitalized)
+                if !timer.categoryIDs.isEmpty {
+                    Text("·")
+                    Text(timer.categoryIDs.compactMap { id in model.categories.first(where: { $0.id == id })?.name }.joined(separator: ", "))
+                        .lineLimit(1)
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            Button(action: { model.stop() }) {
+                Label("Stop and save", systemImage: "stop.fill")
+                    .frame(maxWidth: .infinity, minHeight: 52)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.orange)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
+    }
+
+    private func timerForm(_ model: TimerHomeModel) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Choose an activity")
+                .font(.headline)
+
+            if model.categories.isEmpty {
+                Text("Add a category to get started, such as a course, reading, exercise, or project.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                Picker("Category", selection: Binding(
+                    get: { model.selectedCategoryID },
+                    set: { model.selectedCategoryID = $0 }
+                )) {
+                    Text("Choose a category").tag(Optional<UUID>.none)
+                    ForEach(model.categories) { category in
+                        Text(category.name).tag(Optional(category.id))
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                .accessibilityLabel("Activity category")
             }
 
-            if let errorMessage = model.errorMessage {
-                Text(errorMessage)
-                    .font(.callout)
-                    .foregroundStyle(.red)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 10) {
+                TextField("Add a category", text: Binding(
+                    get: { model.newCategoryName },
+                    set: { model.newCategoryName = $0 }
+                ))
+                .textFieldStyle(.roundedBorder)
+                .textInputAutocapitalization(.words)
+                .submitLabel(.done)
+                .onSubmit { Task { await model.addCategory() } }
+                .frame(minHeight: 44)
+
+                Button(model.isCreatingCategory ? "Adding" : "Add") {
+                    Task { await model.addCategory() }
+                }
+                .frame(minWidth: 56, minHeight: 44)
+                .disabled(model.isCreatingCategory || model.newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-                Spacer(minLength: 0)
+
+            Picker("Visibility", selection: Binding(
+                get: { model.visibility },
+                set: { model.visibility = $0 }
+            )) {
+                Text("Public").tag(ActivityVisibility.public)
+                Text("Friends").tag(ActivityVisibility.friendsOnly)
+                Text("Private").tag(ActivityVisibility.private)
             }
-            .toolbar(.hidden, for: .navigationBar)
+            .pickerStyle(.segmented)
+
+            Button(action: { model.start() }) {
+                Label("Start timer", systemImage: "record.circle")
+                    .frame(maxWidth: .infinity, minHeight: 52)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(model.selectedCategoryID == nil || model.isCreatingCategory)
         }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
     }
 }
