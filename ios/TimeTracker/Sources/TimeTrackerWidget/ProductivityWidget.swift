@@ -63,8 +63,8 @@ struct ProductivityWidget: Widget {
             Text(title)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Text(Duration.seconds(seconds), format: .time(pattern: .hourMinute))
-                .font(.title3.weight(.semibold).monospacedDigit())
+            Text(AnalyticsDurationFormatter.format(seconds, includesDays: false))
+                .font(.caption.weight(.semibold).monospacedDigit())
                 .minimumScaleFactor(0.75)
                 .lineLimit(1)
         }
