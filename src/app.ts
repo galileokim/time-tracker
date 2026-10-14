@@ -1,12 +1,13 @@
 import Fastify, { type FastifyInstance } from "fastify";
+import jwtPlugin from "@fastify/jwt";
 import type { AppConfig } from "./config.js";
 import { createDatabase, type Database } from "./db/client.js";
+import { createRedisClient, type RedisClient } from "./cache/redis.js";
+import { DomainError } from "./errors.js";
 import { authRoutes } from "./auth/routes.js";
 import { profileRoutes } from "./profile/routes.js";
-import jwtPlugin from "@fastify/jwt";
 import { logRoutes } from "./logs/routes.js";
 import { socialRoutes } from "./social/routes.js";
-import { createRedisClient, type RedisClient } from "./cache/redis.js";
 
 export interface AppDependencies {
   logger?: boolean;
@@ -25,24 +26,20 @@ export function buildApp({ logger = true, config, db, redis }: AppDependencies =
       secret: config.JWT_SECRET,
       sign: { expiresIn: config.JWT_EXPIRES_IN },
     });
-    app.register(async (authenticatedApi) => {
-      await authenticatedApi.register(authRoutes, {
-        prefix: "/auth",
-        config,
-        db,
+    app.register(async (api) => {
+      api.setErrorHandler((error, _request, reply) => {
+        if (error instanceof DomainError) {
+          return reply.code(error.statusCode).send({ error: { code: error.code, message: error.message } });
+        }
+        // Rethrowing defers to Fastify's default handler, which owns 401s from jwtVerify and 500s.
+        throw error;
       });
-      await authenticatedApi.register(profileRoutes, {
-        db,
-      });
-      await authenticatedApi.register(logRoutes, {
-        db,
-        redis,
-        feedCacheMaxAgeSeconds: config.FEED_CACHE_MAX_AGE_SECONDS,
-      });
-      await authenticatedApi.register(socialRoutes, {
-        db,
-        redis,
-      });
+
+      const feedCacheMaxAgeSeconds = config.FEED_CACHE_MAX_AGE_SECONDS;
+      await api.register(authRoutes, { prefix: "/auth", config, db });
+      await api.register(profileRoutes, { db });
+      await api.register(logRoutes, { db, redis, feedCacheMaxAgeSeconds });
+      await api.register(socialRoutes, { db, redis, feedCacheMaxAgeSeconds });
     }, { prefix: "/api/v1" });
   }
 
