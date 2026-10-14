@@ -1,8 +1,9 @@
 import type { FastifyPluginAsync } from "fastify";
 import type { Database } from "../db/client.js";
 import type { AppConfig } from "../config.js";
+import { invalidRequest } from "../http.js";
 import { loginSchema, registerSchema } from "./schemas.js";
-import { AccountConflictError, AuthService, AuthenticationError } from "./service.js";
+import { AuthService } from "./service.js";
 
 export interface AuthRouteOptions {
   db: Database;
@@ -12,52 +13,22 @@ export interface AuthRouteOptions {
 export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, options) => {
   const auth = new AuthService(
     options.db,
-    {
-      sign: (payload, signOptions) => app.jwt.sign(payload, signOptions),
-    },
+    { sign: (payload, signOptions) => app.jwt.sign(payload, signOptions) },
     options.config.JWT_EXPIRES_IN,
   );
 
   app.post("/register", async (request, reply) => {
     const input = registerSchema.safeParse(request.body);
-    if (!input.success) {
-      return reply.code(400).send({
-        error: {
-          code: "INVALID_REQUEST",
-          issues: input.error.issues.map(({ path, code }) => ({ path, code })),
-        },
-      });
-    }
+    if (!input.success) return invalidRequest(reply, input.error.issues);
 
-    try {
-      const user = await auth.register(input.data);
-      return reply.code(201).send({ user });
-    } catch (error) {
-      if (error instanceof AccountConflictError) {
-        return reply.code(error.statusCode).send({ error: { code: error.code, message: error.message } });
-      }
-      throw error;
-    }
+    const user = await auth.register(input.data);
+    return reply.code(201).send({ user });
   });
 
   app.post("/login", async (request, reply) => {
     const input = loginSchema.safeParse(request.body);
-    if (!input.success) {
-      return reply.code(400).send({
-        error: {
-          code: "INVALID_REQUEST",
-          issues: input.error.issues.map(({ path, code }) => ({ path, code })),
-        },
-      });
-    }
+    if (!input.success) return invalidRequest(reply, input.error.issues);
 
-    try {
-      return await auth.login(input.data);
-    } catch (error) {
-      if (error instanceof AuthenticationError) {
-        return reply.code(error.statusCode).send({ error: { code: error.code, message: error.message } });
-      }
-      throw error;
-    }
+    return auth.login(input.data);
   });
 };

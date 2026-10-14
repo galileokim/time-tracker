@@ -1,24 +1,18 @@
 import argon2 from "argon2";
 import type { Database } from "../db/client.js";
+import { isUniqueViolation, toDate } from "../db/utils.js";
+import { DomainError } from "../errors.js";
 import type { AuthTokens, LoginInput, PublicUser, RegisterInput } from "./schemas.js";
 
-export class AuthenticationError extends Error {
-  readonly statusCode = 401;
-  readonly code = "INVALID_CREDENTIALS";
-
+export class AuthenticationError extends DomainError {
   constructor() {
-    super("Invalid username or password");
-    this.name = "AuthenticationError";
+    super(401, "INVALID_CREDENTIALS", "Invalid username or password");
   }
 }
 
-export class AccountConflictError extends Error {
-  readonly statusCode = 409;
-  readonly code = "ACCOUNT_CONFLICT";
-
+export class AccountConflictError extends DomainError {
   constructor() {
-    super("Username or email is already in use");
-    this.name = "AccountConflictError";
+    super(409, "ACCOUNT_CONFLICT", "Username or email is already in use");
   }
 }
 
@@ -126,10 +120,6 @@ function toPublicUser(row: {
     displayName: row.display_name,
     email: row.email,
     avatarUrl: row.avatar_url,
-    createdAt: new Date(String(row.created_at)),
+    createdAt: toDate(row.created_at),
   };
-}
-
-function isUniqueViolation(error: unknown): error is { code: string } {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "23505";
 }
