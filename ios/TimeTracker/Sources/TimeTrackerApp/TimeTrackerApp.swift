@@ -536,13 +536,15 @@ struct TimerHomeView: View {
             .tag(TrackerTab.timer)
 
             NavigationStack {
-                ProductivitySummaryView(
-                    summary: ProductivitySummary(logs: model.recordedLogs.map(\.productivitySummaryLog), now: now),
-                    hasRecordedLogs: !model.recordedLogs.isEmpty,
-                    categories: model.categories
-                )
-                .padding(20)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                ScrollView {
+                    ProductivitySummaryView(
+                        summary: ProductivitySummary(logs: model.recordedLogs.map(\.productivitySummaryLog), now: now),
+                        hasRecordedLogs: !model.recordedLogs.isEmpty,
+                        categories: model.categories
+                    )
+                    .padding(20)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
                 .background(Color(uiColor: .systemGroupedBackground))
                 .navigationTitle("Analytics")
             }

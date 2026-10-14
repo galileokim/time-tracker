@@ -9,6 +9,7 @@ struct ProductivitySummaryView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Recorded time")
                 .font(.headline)
+                .fixedSize(horizontal: false, vertical: true)
             if !hasRecordedLogs {
                 Text("Completed timers will appear here.")
                     .font(.subheadline)
@@ -36,6 +37,7 @@ struct ProductivitySummaryView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
         .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
     }
 
