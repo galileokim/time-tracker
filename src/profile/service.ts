@@ -1,24 +1,18 @@
 import type { Database } from "../db/client.js";
+import { isUniqueViolation, toDate } from "../db/utils.js";
+import { DomainError } from "../errors.js";
 import type { CreateCategoryInput, CategoryResponse, UpdateProfileInput } from "./schemas.js";
 import type { PublicUser } from "../auth/schemas.js";
 
-export class ProfileNotFoundError extends Error {
-  readonly statusCode = 404;
-  readonly code = "PROFILE_NOT_FOUND";
-
+export class ProfileNotFoundError extends DomainError {
   constructor() {
-    super("Profile not found");
-    this.name = "ProfileNotFoundError";
+    super(404, "PROFILE_NOT_FOUND", "Profile not found");
   }
 }
 
-export class CategoryConflictError extends Error {
-  readonly statusCode = 409;
-  readonly code = "CATEGORY_CONFLICT";
-
+export class CategoryConflictError extends DomainError {
   constructor() {
-    super("Category name already exists");
-    this.name = "CategoryConflictError";
+    super(409, "CATEGORY_CONFLICT", "Category name already exists");
   }
 }
 
@@ -114,12 +108,4 @@ function toCategory(row: {
     colorHex: row.color_hex,
     createdAt: toDate(row.created_at),
   };
-}
-
-function toDate(value: Date | string | object): Date {
-  return value instanceof Date ? value : new Date(String(value));
-}
-
-function isUniqueViolation(error: unknown): error is { code: string } {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "23505";
 }
