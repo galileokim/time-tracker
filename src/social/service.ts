@@ -1,33 +1,31 @@
 import type { Database } from "../db/client.js";
+import { toDate } from "../db/utils.js";
+import { DomainError } from "../errors.js";
 import type { RedisClient } from "../cache/redis.js";
 import { RedisFeedCache } from "../cache/feed-cache.js";
 import type { FeedCursor, FeedPage, FeedQuery } from "./schemas.js";
 import { getFeedFromDatabase } from "./feed-query.js";
 
-export class FollowTargetNotFoundError extends Error {
-  readonly statusCode = 404;
-  readonly code = "USER_NOT_FOUND";
-
+export class FollowTargetNotFoundError extends DomainError {
   constructor() {
-    super("User not found");
-    this.name = "FollowTargetNotFoundError";
+    super(404, "USER_NOT_FOUND", "User not found");
   }
 }
 
-export class SelfFollowError extends Error {
-  readonly statusCode = 400;
-  readonly code = "SELF_FOLLOW_NOT_ALLOWED";
-
+export class SelfFollowError extends DomainError {
   constructor() {
-    super("An account cannot follow itself");
-    this.name = "SelfFollowError";
+    super(400, "SELF_FOLLOW_NOT_ALLOWED", "An account cannot follow itself");
   }
 }
 
 export class SocialService {
   private readonly cache: RedisFeedCache | undefined;
 
-  constructor(private readonly db: Database, redis?: RedisClient) {
+  constructor(
+    private readonly db: Database,
+    redis?: RedisClient,
+    private readonly cacheRetentionSeconds = 604800,
+  ) {
     this.cache = redis ? new RedisFeedCache(redis) : undefined;
   }
 
@@ -145,7 +143,7 @@ export class SocialService {
       await this.cache?.addForFollowers(
         [userId],
         rows.map((row) => ({ id: row.id, createdAt: row.createdAt })),
-        604800,
+        this.cacheRetentionSeconds,
       );
     } catch {
       return;
@@ -162,7 +160,7 @@ export class SocialService {
     await this.cache?.addForFollowers(
       [followerId],
       logs.map((log) => ({ id: log.id, createdAt: toDate(log.created_at) })),
-      604800,
+      this.cacheRetentionSeconds,
     );
   }
 }
@@ -201,8 +199,4 @@ function pageFromRows(rows: Awaited<ReturnType<typeof getFeedFromDatabase>>["row
       ? encodeCursor({ createdAt: last.createdAt.toISOString(), id: last.id })
       : null,
   };
-}
-
-function toDate(value: Date | string | object): Date {
-  return value instanceof Date ? value : new Date(String(value));
 }

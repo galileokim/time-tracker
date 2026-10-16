@@ -3,19 +3,12 @@ export interface FeedOrderKey {
   id: string;
 }
 
-export interface FeedCursorKey {
-  createdAt: Date;
-  id: string;
-}
+export type FeedCursorKey = FeedOrderKey;
 
 export function isOlderThanCursor(entry: FeedOrderKey, cursor: FeedCursorKey): boolean {
   const entryTime = entry.createdAt.getTime();
   const cursorTime = cursor.createdAt.getTime();
   return entryTime < cursorTime || (entryTime === cursorTime && entry.id < cursor.id);
-}
-
-export function cursorPredicateValues(cursor: FeedCursorKey): { createdAt: Date; id: string } {
-  return { createdAt: cursor.createdAt, id: cursor.id };
 }
 
 export function sortFeedDescending<T extends FeedOrderKey>(entries: readonly T[]): T[] {

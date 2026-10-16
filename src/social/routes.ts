@@ -1,40 +1,34 @@
-import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
-import { z } from "zod";
+import type { FastifyPluginAsync } from "fastify";
 import type { Database } from "../db/client.js";
 import type { RedisClient } from "../cache/redis.js";
+import { authenticate, authenticatedUserId, invalidRequest } from "../http.js";
 import { feedQuerySchema, followUserSchema } from "./schemas.js";
-import { decodeCursor, FollowTargetNotFoundError, SelfFollowError, SocialService } from "./service.js";
+import { decodeCursor, SocialService } from "./service.js";
 
 export interface SocialRouteOptions {
   db: Database;
   redis?: RedisClient;
+  feedCacheMaxAgeSeconds?: number;
 }
 
-export const socialRoutes: FastifyPluginAsync<SocialRouteOptions> = async (app, { db, redis }) => {
-  const social = new SocialService(db, redis);
+export const socialRoutes: FastifyPluginAsync<SocialRouteOptions> = async (app, { db, redis, feedCacheMaxAgeSeconds }) => {
+  const social = new SocialService(db, redis, feedCacheMaxAgeSeconds);
+
   app.addHook("preHandler", authenticate);
 
   app.post("/follows", async (request, reply) => {
     const input = followUserSchema.safeParse(request.body);
     if (!input.success) return invalidRequest(reply, input.error.issues);
 
-    try {
-      await social.follow(authenticatedUserId(request), input.data.userId);
-      return reply.code(204).send();
-    } catch (error) {
-      if (error instanceof SelfFollowError || error instanceof FollowTargetNotFoundError) {
-        return reply.code(error.statusCode).send({
-          error: { code: error.code, message: error.message },
-        });
-      }
-      throw error;
-    }
+    await social.follow(authenticatedUserId(request), input.data.userId);
+    return reply.code(204).send();
   });
 
-  app.delete<{ Params: { userId: string } }>("/follows/:userId", async (request, reply) => {
-    const target = zUserId(request.params.userId);
-    if (!target.success) return invalidRequest(reply, [{ path: ["userId"], code: "invalid_format" }]);
-    await social.unfollow(authenticatedUserId(request), target.data);
+  app.delete("/follows/:userId", async (request, reply) => {
+    const target = followUserSchema.safeParse(request.params);
+    if (!target.success) return invalidRequest(reply, target.error.issues);
+
+    await social.unfollow(authenticatedUserId(request), target.data.userId);
     return reply.code(204).send();
   });
 
@@ -64,25 +58,3 @@ export const socialRoutes: FastifyPluginAsync<SocialRouteOptions> = async (app, 
     return social.getFeedPage(authenticatedUserId(request), query.data);
   });
 };
-
-async function authenticate(request: FastifyRequest): Promise<void> {
-  await request.jwtVerify();
-}
-
-function authenticatedUserId(request: FastifyRequest): string {
-  return (request.user as { sub: string }).sub;
-}
-
-function invalidRequest(reply: FastifyReply, issues: Array<{ path: PropertyKey[]; code: string }>) {
-  return reply.code(400).send({
-    error: {
-      code: "INVALID_REQUEST",
-      issues: issues.map(({ path, code }) => ({ path, code })),
-    },
-  });
-}
-
-function zUserId(value: string) {
-  const result = z.uuid().safeParse(value);
-  return result.success ? result : { success: false as const };
-}

@@ -1,7 +1,7 @@
 import type { Database } from "../db/client.js";
 import type { FeedEntry, FeedQuery } from "./schemas.js";
 import { decodeCursor } from "./service.js";
-import { cursorPredicateValues } from "./pagination.js";
+import { toDate } from "../db/utils.js";
 
 export async function getFeedFromDatabase(
   db: Database,
@@ -38,12 +38,13 @@ export async function getFeedFromDatabase(
   }
 
   if (cursor) {
-    const cursorValues = cursorPredicateValues({ createdAt: new Date(cursor.createdAt), id: cursor.id });
+    // Kysely types `created_at` through the nullable joins in a way that rejects a plain Date operand.
+    const cursorCreatedAt = new Date(cursor.createdAt) as never;
     feedQuery = feedQuery.where((expression) => expression.or([
-      expression("logs.created_at", "<", cursorValues.createdAt as never),
+      expression("logs.created_at", "<", cursorCreatedAt),
       expression.and([
-        expression("logs.created_at", "=", cursorValues.createdAt as never),
-        expression("logs.id", "<", cursorValues.id),
+        expression("logs.created_at", "=", cursorCreatedAt),
+        expression("logs.id", "<", cursor.id),
       ]),
     ]));
   }
@@ -97,11 +98,11 @@ export async function getFeedFromDatabase(
       id: row.id,
       title: row.title,
       notes: row.notes,
-      startedAt: normalizeDate(row.started_at),
-      endedAt: normalizeDate(row.ended_at),
+      startedAt: toDate(row.started_at),
+      endedAt: toDate(row.ended_at),
       durationSeconds: row.duration_seconds,
       visibility: row.visibility,
-      createdAt: normalizeDate(row.created_at),
+      createdAt: toDate(row.created_at),
       author: {
         id: row.user_id,
         username: row.author_username,
@@ -112,8 +113,4 @@ export async function getFeedFromDatabase(
     })),
     hasMore,
   };
-}
-
-function normalizeDate(value: Date | string | object): Date {
-  return value instanceof Date ? value : new Date(String(value));
 }
