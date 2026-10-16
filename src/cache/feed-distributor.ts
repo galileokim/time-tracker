@@ -1,4 +1,5 @@
 import type { Database } from "../db/client.js";
+import { toDate } from "../db/utils.js";
 import type { FeedCache } from "./feed-cache.js";
 
 export class FeedDistributor {
@@ -25,12 +26,8 @@ export class FeedDistributor {
 
     await this.cache.addForFollowers(
       followers.map((row) => row.follower_id),
-      [{ id: log.id, createdAt: normalizeDate(log.created_at) }],
+      [{ id: log.id, createdAt: toDate(log.created_at) }],
       this.retentionSeconds,
     );
   }
-}
-
-function normalizeDate(value: Date | string | object): Date {
-  return value instanceof Date ? value : new Date(String(value));
 }
