@@ -30,7 +30,3 @@ public struct FeedPage: Decodable, Equatable, Sendable {
     public let items: [FeedEntry]
     public let nextCursor: String?
 }
-
-enum FeedClientError: Error, Equatable {
-    case invalidCursor
-}

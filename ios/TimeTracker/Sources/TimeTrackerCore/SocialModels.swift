@@ -4,7 +4,7 @@ public struct SocialUser: Codable, Equatable, Sendable, Identifiable {
     public let id: UUID
     public let username: String
     public let displayName: String
-    public let isFollowing: Bool
+    public var isFollowing: Bool
 
     public init(id: UUID, username: String, displayName: String, isFollowing: Bool) {
         self.id = id
@@ -12,14 +12,6 @@ public struct SocialUser: Codable, Equatable, Sendable, Identifiable {
         self.displayName = displayName
         self.isFollowing = isFollowing
     }
-}
-
-struct UserSearchEnvelope: Decodable {
-    let users: [SocialUser]
-}
-
-struct FollowingEnvelope: Decodable {
-    let following: [FollowingUser]
 }
 
 public struct FollowingUser: Decodable, Identifiable, Sendable {
@@ -30,11 +22,19 @@ public struct FollowingUser: Decodable, Identifiable, Sendable {
     public let followedAt: Date
 }
 
-struct FollowPayload: Encodable {
-    let userId: UUID
-}
-
 public enum SocialClientError: Error, Equatable {
     case invalidUsername
     case followConflict
+}
+
+struct UserSearchEnvelope: Decodable {
+    let users: [SocialUser]
+}
+
+struct FollowingEnvelope: Decodable {
+    let following: [FollowingUser]
+}
+
+struct FollowPayload: Encodable {
+    let userId: UUID
 }

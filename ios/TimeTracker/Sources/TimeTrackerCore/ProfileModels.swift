@@ -1,9 +1,9 @@
 import Foundation
 
-public struct APIProfile: Codable, Equatable, Sendable {
+public struct APIUser: Codable, Equatable, Sendable {
     public let id: UUID
     public let username: String
-    public let displayName: String
+    public var displayName: String
     public let email: String
     public let avatarUrl: URL?
     public let createdAt: Date?
@@ -32,8 +32,8 @@ public struct APICategory: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
-struct ProfileEnvelope: Decodable {
-    let user: APIProfile
+public enum ProfileClientError: Error, Equatable {
+    case duplicateCategory
 }
 
 struct CategoriesEnvelope: Decodable {
@@ -46,42 +46,9 @@ struct CategoryEnvelope: Decodable {
 
 struct UpdateProfilePayload: Encodable {
     let displayName: String
-    let avatarUrl: URL?
-
-    enum CodingKeys: String, CodingKey {
-        case displayName
-        case avatarUrl
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(displayName, forKey: .displayName)
-        if let avatarUrl {
-            try container.encode(avatarUrl, forKey: .avatarUrl)
-        }
-    }
 }
 
 struct CreateCategoryPayload: Encodable {
     let name: String
     let colorHex: String?
-
-    enum CodingKeys: String, CodingKey {
-        case name
-        case colorHex
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(name, forKey: .name)
-        if let colorHex {
-            try container.encode(colorHex, forKey: .colorHex)
-        }
-    }
-}
-
-public struct CategoryConflictError: Error, Equatable {}
-
-public enum ProfileClientError: Error, Equatable {
-    case duplicateCategory
 }
