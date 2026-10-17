@@ -1,20 +1,31 @@
 import { z } from "zod";
 
-const usernameSchema = z.string().trim().min(3).max(50).regex(/^[a-zA-Z0-9_.-]+$/);
-const displayNameSchema = z.string().trim().min(1).max(100);
-const emailSchema = z.email().trim().max(255).transform((email) => email.toLowerCase());
-const passwordSchema = z.string().min(1).max(128);
+const usernameSchema = z.string({ error: "Enter a username." })
+  .trim()
+  .min(1, "Enter a username.")
+  .max(50, "Username must be 50 characters or fewer.");
+const displayNameSchema = z.string().trim().max(100, "Display name must be 100 characters or fewer.");
+// At least one character before the @ and a provider domain after it, such as name@gmail.com.
+const emailSchema = z.string({ error: "Enter an email address." })
+  .trim()
+  .max(255, "Email must be 255 characters or fewer.")
+  .regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, "Enter an email address like name@gmail.com.")
+  .transform((email) => email.toLowerCase());
+const passwordSchema = z.string({ error: "Enter a password." })
+  .min(1, "Enter a password.")
+  .max(128, "Password must be 128 characters or fewer.");
 
 export const registerSchema = z.object({
   username: usernameSchema,
-  displayName: displayNameSchema,
+  // Blank display names fall back to the username.
+  displayName: displayNameSchema.optional(),
   email: emailSchema,
   password: passwordSchema,
-});
+}).transform((input) => ({ ...input, displayName: input.displayName || input.username }));
 
 export const loginSchema = z.object({
   username: usernameSchema,
-  password: z.string().min(1).max(128),
+  password: passwordSchema,
 });
 
 export type RegisterInput = z.infer<typeof registerSchema>;
