@@ -2,80 +2,46 @@ import ActivityKit
 import Foundation
 
 @MainActor
-@Observable
 final class LiveActivityController {
-    private(set) var activeActivityID: String?
-
-    var isSupported: Bool {
-        ActivityAuthorizationInfo().areActivitiesEnabled
-    }
+    private typealias TimerActivity = Activity<TimerActivityAttributes>
 
     func start(for timer: RunningTimer) async {
-        guard LiveActivityCapability.shouldRequestActivity(activitiesEnabled: isSupported) else { return }
-        await endExistingActivity()
-
-        let attributes = TimerActivityAttributes(timerID: timer.id)
-        let state = TimerActivityAttributes.ContentState(
-            startedAt: timer.startedAt,
-            activityTitle: timer.title
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        await endAll()
+        let state = TimerActivityAttributes.ContentState(startedAt: timer.startedAt, activityTitle: timer.title)
+        // A failed request only means no Lock Screen timer; the in-app timer is unaffected.
+        _ = try? TimerActivity.request(
+            attributes: TimerActivityAttributes(timerID: timer.id),
+            content: ActivityContent(state: state, staleDate: nil)
         )
-        let content = ActivityContent(state: state, staleDate: nil)
-
-        do {
-            let activity = try Activity<TimerActivityAttributes>.request(
-                attributes: attributes,
-                content: content,
-                pushType: nil
-            )
-            activeActivityID = activity.id
-        } catch {
-            activeActivityID = nil
-        }
     }
 
     func end(timerID: UUID) async {
-        let activityIDs = Activity<TimerActivityAttributes>.activities
-            .filter { $0.attributes.timerID == timerID }
-            .map(\.id)
-        await endActivities(withIDs: activityIDs)
-        if activityIDs.contains(activeActivityID ?? "") {
-            activeActivityID = nil
-        }
-    }
-
-    func currentActivityState() -> TimerActivityAttributes.ContentState? {
-        guard let activeActivityID,
-              let activity = Activity<TimerActivityAttributes>.activities.first(where: { $0.id == activeActivityID }) else {
-            return nil
-        }
-        return activity.content.state
+        await Self.endActivities { $0.timerID == timerID }
     }
 
     func endAll() async {
-        await endExistingActivity()
+        await Self.endActivities { _ in true }
     }
 
-    func restoreRunningTimer(_ timer: RunningTimer?) async {
+    /// Keeps the Live Activity in step with the persisted timer after a relaunch.
+    func restore(_ timer: RunningTimer?) async {
         guard let timer else {
-            await endExistingActivity()
+            await endAll()
             return
         }
-        if let existing = Activity<TimerActivityAttributes>.activities.first(where: { $0.attributes.timerID == timer.id }) {
-            activeActivityID = existing.id
-            return
+        if state(for: timer.id) == nil {
+            await start(for: timer)
         }
-        await start(for: timer)
     }
 
-    private func endExistingActivity() async {
-        let activityIDs = Activity<TimerActivityAttributes>.activities.map(\.id)
-        await endActivities(withIDs: activityIDs)
-        activeActivityID = nil
+    func state(for timerID: UUID) -> TimerActivityAttributes.ContentState? {
+        TimerActivity.activities.first { $0.attributes.timerID == timerID }?.content.state
     }
 
-    nonisolated private func endActivities(withIDs ids: [String]) async {
-        for activityID in ids {
-            guard let activity = Activity<TimerActivityAttributes>.activities.first(where: { $0.id == activityID }) else { continue }
+    /// `Activity` is not `Sendable`, so activities are looked up and ended off the main actor.
+    private nonisolated static func endActivities(where shouldEnd: @Sendable (TimerActivityAttributes) -> Bool) async {
+        for activity in TimerActivity.activities where shouldEnd(activity.attributes) {
             await activity.end(nil, dismissalPolicy: .immediate)
         }
     }
