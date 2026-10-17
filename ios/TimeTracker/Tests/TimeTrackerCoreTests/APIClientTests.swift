@@ -147,7 +147,7 @@ struct APIClientTests {
 
     @Test func feedRejectsOutOfRangePageLimit() async throws {
         let client = TrackerAPIClient(baseURL: URL(string: "https://tracker.example.test")!)
-        await #expect(throws: APIClientError.invalidResponse) {
+        await #expect(throws: APIClientError.invalidRequest) {
             try await client.feedPage(accessToken: "access-token", limit: 101)
         }
     }
@@ -252,6 +252,67 @@ struct APIClientTests {
         await #expect(throws: APIClientError.server(statusCode: 401, code: "INVALID_CREDENTIALS")) {
             try await client.login(username: "missing-user", password: "wrong-password")
         }
+    }
+
+    @Test func validationFailureSurfacesFieldMessages() async throws {
+        let body = Data(#"{"error":{"code":"INVALID_REQUEST","issues":[{"path":["username"],"code":"invalid_format","message":"Username cannot contain spaces."},{"path":["password"],"code":"too_small","message":"Enter a password."}]}}"#.utf8)
+        let client = TrackerAPIClient(
+            baseURL: URL(string: "https://tracker.example.test")!,
+            session: stubbedSession { _ in response(body: body, statusCode: 400) }
+        )
+
+        await #expect(throws: APIClientError.invalidFields(["Username cannot contain spaces.", "Enter a password."])) {
+            try await client.register(username: "a b", displayName: "", email: "a@b.co", password: "")
+        }
+    }
+
+    @Test func validationFailureWithoutMessagesNamesTheFields() async throws {
+        let body = Data(#"{"error":{"code":"INVALID_REQUEST","issues":[{"path":["displayName"],"code":"invalid_type"},{"path":["password"],"code":"too_small"}]}}"#.utf8)
+        let client = TrackerAPIClient(
+            baseURL: URL(string: "https://tracker.example.test")!,
+            session: stubbedSession { _ in response(body: body, statusCode: 400) }
+        )
+
+        await #expect(throws: APIClientError.invalidFields(["Check the display name field.", "Check the password field."])) {
+            try await client.register(username: "galileo", displayName: "", email: "galileo@gmail.com", password: "galileo")
+        }
+    }
+
+    @Test func followMapsSelfFollowErrorFromNoContentEndpoint() async throws {
+        let body = Data(#"{"error":{"code":"SELF_FOLLOW_NOT_ALLOWED","message":"An account cannot follow itself"}}"#.utf8)
+        let client = TrackerAPIClient(
+            baseURL: URL(string: "https://tracker.example.test")!,
+            session: stubbedSession { _ in response(body: body, statusCode: 400) }
+        )
+
+        await #expect(throws: SocialClientError.followConflict) {
+            try await client.follow(userID: UUID(), accessToken: "access-token")
+        }
+    }
+
+    @Test func decodesTimestampsWithMilliseconds() async throws {
+        let body = Data("""
+        {"categories":[{"id":"\(UUID())","name":"Writing","colorHex":"#345678","createdAt":"2026-02-08T12:00:00.123Z"}]}
+        """.utf8)
+        let client = TrackerAPIClient(
+            baseURL: URL(string: "https://tracker.example.test")!,
+            session: stubbedSession { _ in response(body: body, statusCode: 200) }
+        )
+
+        let categories = try await client.categories(accessToken: "access-token")
+
+        let createdAt = try #require(categories.first?.createdAt)
+        #expect(abs(createdAt.timeIntervalSince1970 - 1_770_552_000.123) < 0.001)
+    }
+
+    @Test func percentEncodesPlusInQueryValues() async throws {
+        let session = stubbedSession { request in
+            #expect(request.url?.query == "username=a%2Bb")
+            return response(body: Data(#"{"users":[]}"#.utf8), statusCode: 200)
+        }
+        let client = TrackerAPIClient(baseURL: URL(string: "https://tracker.example.test")!, session: session)
+
+        _ = try await client.searchUsers(username: "a+b", accessToken: "access-token")
     }
 
     private func stubbedSession(
