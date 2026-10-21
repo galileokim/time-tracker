@@ -6,6 +6,51 @@ import Testing
 @Suite(.serialized)
 @MainActor
 struct SwiftDataTimerStoreTests {
+    @Test func storeKeepsItsContainerAlive() throws {
+        let store = try makeStoreWithoutRetainingContainer()
+
+        let timer = try store.start(userID: UUID(), title: "Writing", startedAt: .now)
+
+        #expect(try store.currentTimer(userID: timer.userID!) == timer)
+    }
+
+    private func makeStoreWithoutRetainingContainer() throws -> SwiftDataTimerStore {
+        // Mirrors app launch: the store is the only owner of the container.
+        SwiftDataTimerStore(modelContainer: try makeContainer())
+    }
+
+    @Test func manualLogIsSavedPendingSyncAndRejectsEmptyRanges() throws {
+        let userID = UUID()
+        let categoryID = UUID()
+        let store = SwiftDataTimerStore(modelContainer: try makeContainer())
+        let startedAt = Date(timeIntervalSince1970: 1_800_000_000)
+
+        let log = try store.addCompletedLog(
+            userID: userID,
+            title: " Reading ",
+            notes: nil,
+            categoryIDs: [categoryID],
+            visibility: .private,
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(5_400)
+        )
+
+        #expect(log.title == "Reading")
+        #expect(log.durationSeconds == 5_400)
+        #expect(try store.pendingLogs(userID: userID).map(\.idempotencyKey) == [log.idempotencyKey])
+        #expect(throws: TimerStoreError.invalidTimeRange) {
+            try store.addCompletedLog(
+                userID: userID,
+                title: "Reading",
+                notes: nil,
+                categoryIDs: [categoryID],
+                visibility: .private,
+                startedAt: startedAt,
+                endedAt: startedAt
+            )
+        }
+    }
+
     @Test func restoresTimersAndScopesPersistedLogsByAccount() throws {
         let userA = UUID()
         let userB = UUID()

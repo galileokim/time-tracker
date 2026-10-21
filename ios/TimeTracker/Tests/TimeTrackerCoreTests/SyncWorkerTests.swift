@@ -76,6 +76,25 @@ struct SyncWorkerTests {
         #expect(acknowledged.values == [logs[1].idempotencyKey])
     }
 
+    @Test func rejectedTokenFlagsReportAsRequiringAuthentication() async {
+        struct UnauthorizedLogSyncAPI: LogSyncAPI {
+            func createLog(_ log: LocalActivityLog) async throws -> UUID {
+                throw APIClientError.server(statusCode: 401, code: "UNAUTHORIZED")
+            }
+        }
+        let log = makeLog(title: "expired")
+
+        let report = await LogSyncCoordinator().synchronize(
+            logs: [log],
+            api: UnauthorizedLogSyncAPI(),
+            acknowledge: { _, _ in },
+            recordFailure: { _, _ in }
+        )
+
+        #expect(report.failedKeys == [log.idempotencyKey])
+        #expect(report.requiresAuthentication)
+    }
+
     @Test func syncContinuesAfterFailureAndPreservesIdempotencyKeys() async {
         let logs = [
             makeLog(title: "first"),
@@ -155,6 +174,10 @@ private final class RecordingTimerStore: TimerStoreProtocol {
 
     func recordAttempt(idempotencyKey: UUID, userID: UUID, failure: String) throws {
         transitionUserIDs.append(userID)
+    }
+
+    func addCompletedLog(userID: UUID, title: String, notes: String?, categoryIDs: [UUID], visibility: ActivityVisibility, startedAt: Date, endedAt: Date) throws -> LocalActivityLog {
+        LocalActivityLog(userID: userID, title: title, notes: notes, startedAt: startedAt, endedAt: endedAt, categoryIDs: categoryIDs, visibility: visibility)
     }
 }
 

@@ -69,4 +69,7 @@ private final class EmptyTimerStore: TimerStoreProtocol {
     func updatePendingLog(idempotencyKey: UUID, userID: UUID, title: String, notes: String?, categoryIDs: [UUID], visibility: ActivityVisibility) throws {}
     func markSynced(idempotencyKey: UUID, userID: UUID, serverID: UUID) throws {}
     func recordAttempt(idempotencyKey: UUID, userID: UUID, failure: String) throws {}
+    func addCompletedLog(userID: UUID, title: String, notes: String?, categoryIDs: [UUID], visibility: ActivityVisibility, startedAt: Date, endedAt: Date) throws -> LocalActivityLog {
+        LocalActivityLog(userID: userID, title: title, notes: notes, startedAt: startedAt, endedAt: endedAt, categoryIDs: categoryIDs, visibility: visibility)
+    }
 }
