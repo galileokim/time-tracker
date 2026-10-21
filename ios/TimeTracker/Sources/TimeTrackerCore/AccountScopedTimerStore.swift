@@ -1,5 +1,6 @@
 import Foundation
 
+/// Wraps a timer store so every call is checked against a single signed-in account.
 @MainActor
 public final class AccountScopedTimerStore: TimerStoreProtocol {
     private let store: any TimerStoreProtocol
@@ -18,7 +19,7 @@ public final class AccountScopedTimerStore: TimerStoreProtocol {
         visibility: ActivityVisibility,
         startedAt: Date
     ) throws -> RunningTimer {
-        guard requestedUserID == userID else { throw TimerStoreError.accountMismatch }
+        try verify(requestedUserID)
         guard try store.currentTimer(userID: userID) == nil else {
             throw TimerStoreError.timerAlreadyRunning
         }
@@ -33,32 +34,32 @@ public final class AccountScopedTimerStore: TimerStoreProtocol {
     }
 
     public func stop(timerID: UUID, userID requestedUserID: UUID, endedAt: Date) throws -> LocalActivityLog {
-        guard requestedUserID == userID else { throw TimerStoreError.accountMismatch }
+        try verify(requestedUserID)
         return try store.stop(timerID: timerID, userID: userID, endedAt: endedAt)
     }
 
     public func currentTimer(userID requestedUserID: UUID) throws -> RunningTimer? {
-        guard requestedUserID == userID else { throw TimerStoreError.accountMismatch }
+        try verify(requestedUserID)
         return try store.currentTimer(userID: userID)
     }
 
     public func pendingLogs(userID requestedUserID: UUID) throws -> [LocalActivityLog] {
-        guard requestedUserID == userID else { throw TimerStoreError.accountMismatch }
+        try verify(requestedUserID)
         return try store.pendingLogs(userID: userID)
     }
 
     public func allLogs(userID requestedUserID: UUID) throws -> [LocalActivityLog] {
-        guard requestedUserID == userID else { throw TimerStoreError.accountMismatch }
+        try verify(requestedUserID)
         return try store.allLogs(userID: userID)
     }
 
     public func completedLogs(userID requestedUserID: UUID) throws -> [LocalActivityLog] {
-        guard requestedUserID == userID else { throw TimerStoreError.accountMismatch }
+        try verify(requestedUserID)
         return try store.completedLogs(userID: userID)
     }
 
     public func markSyncing(idempotencyKey: UUID, userID requestedUserID: UUID) throws {
-        guard requestedUserID == userID else { throw TimerStoreError.accountMismatch }
+        try verify(requestedUserID)
         try store.markSyncing(idempotencyKey: idempotencyKey, userID: userID)
     }
 
@@ -70,7 +71,7 @@ public final class AccountScopedTimerStore: TimerStoreProtocol {
         categoryIDs: [UUID],
         visibility: ActivityVisibility
     ) throws {
-        guard requestedUserID == userID else { throw TimerStoreError.accountMismatch }
+        try verify(requestedUserID)
         try store.updatePendingLog(
             idempotencyKey: idempotencyKey,
             userID: userID,
@@ -82,12 +83,37 @@ public final class AccountScopedTimerStore: TimerStoreProtocol {
     }
 
     public func markSynced(idempotencyKey: UUID, userID requestedUserID: UUID, serverID: UUID) throws {
-        guard requestedUserID == userID else { throw TimerStoreError.accountMismatch }
+        try verify(requestedUserID)
         try store.markSynced(idempotencyKey: idempotencyKey, userID: userID, serverID: serverID)
     }
 
     public func recordAttempt(idempotencyKey: UUID, userID requestedUserID: UUID, failure: String) throws {
-        guard requestedUserID == userID else { throw TimerStoreError.accountMismatch }
+        try verify(requestedUserID)
         try store.recordAttempt(idempotencyKey: idempotencyKey, userID: userID, failure: failure)
+    }
+
+    public func addCompletedLog(
+        userID requestedUserID: UUID,
+        title: String,
+        notes: String?,
+        categoryIDs: [UUID],
+        visibility: ActivityVisibility,
+        startedAt: Date,
+        endedAt: Date
+    ) throws -> LocalActivityLog {
+        try verify(requestedUserID)
+        return try store.addCompletedLog(
+            userID: userID,
+            title: title,
+            notes: notes,
+            categoryIDs: categoryIDs,
+            visibility: visibility,
+            startedAt: startedAt,
+            endedAt: endedAt
+        )
+    }
+
+    private func verify(_ requestedUserID: UUID) throws {
+        guard requestedUserID == userID else { throw TimerStoreError.accountMismatch }
     }
 }
