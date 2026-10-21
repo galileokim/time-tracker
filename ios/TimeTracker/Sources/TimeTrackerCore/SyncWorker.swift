@@ -16,10 +16,13 @@ struct TokenizedLogSyncAPI: LogSyncAPI {
 public struct SyncReport: Equatable, Sendable {
     public var syncedKeys: [UUID]
     public var failedKeys: [UUID]
+    /// Set when the server rejected the access token, so retrying cannot succeed until the user signs in again.
+    public var requiresAuthentication: Bool
 
-    public init(syncedKeys: [UUID] = [], failedKeys: [UUID] = []) {
+    public init(syncedKeys: [UUID] = [], failedKeys: [UUID] = [], requiresAuthentication: Bool = false) {
         self.syncedKeys = syncedKeys
         self.failedKeys = failedKeys
+        self.requiresAuthentication = requiresAuthentication
     }
 }
 
@@ -43,6 +46,9 @@ public struct LogSyncCoordinator {
             } catch {
                 recordFailure(log.idempotencyKey, error.localizedDescription)
                 report.failedKeys.append(log.idempotencyKey)
+                if (error as? APIClientError)?.isUnauthorized == true {
+                    report.requiresAuthentication = true
+                }
             }
         }
 
