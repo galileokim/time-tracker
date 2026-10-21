@@ -15,6 +15,11 @@ public struct WidgetSummarySnapshot: Equatable, Sendable {
 public enum WidgetSummaryStorage {
     public static let activeUserIDKey = "productivity.activeUserID"
     public static let sharedGroupID = "group.com.galileotimetracker.app"
+    public static let widgetKind = "ProductivityWidget"
+
+    public static var sharedDefaults: UserDefaults? {
+        UserDefaults(suiteName: sharedGroupID)
+    }
 
     public static func storageKeys(for userID: UUID) -> (today: String, week: String, updatedAt: String) {
         let prefix = "productivity.\(userID.uuidString)."
@@ -41,11 +46,9 @@ public enum WidgetSummaryStorage {
         defaults.set(summary.weekSeconds, forKey: keys.week)
         defaults.set(updatedAt.timeIntervalSince1970, forKey: keys.updatedAt)
         defaults.set(userID.uuidString, forKey: activeUserIDKey)
-        defaults.synchronize()
     }
 
     public static func clearActiveUser(from defaults: UserDefaults?) {
         defaults?.removeObject(forKey: activeUserIDKey)
-        defaults?.synchronize()
     }
 }
