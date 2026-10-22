@@ -12,50 +12,53 @@ struct ProductivityWidgetProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (ProductivityWidgetEntry) -> Void) {
-        completion(readEntry())
+        completion(currentEntry())
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<ProductivityWidgetEntry>) -> Void) {
-        let entry = readEntry()
-        let nextRefresh = Calendar.current.date(byAdding: .hour, value: 1, to: .now) ?? .now.addingTimeInterval(3600)
-        completion(Timeline(entries: [entry], policy: .after(nextRefresh)))
+        completion(Timeline(entries: [currentEntry()], policy: .after(.now.addingTimeInterval(3600))))
     }
 
-    private func readEntry() -> ProductivityWidgetEntry {
-        let snapshot = WidgetSummaryStorage.activeSnapshot(from: UserDefaults(suiteName: WidgetSummaryStorage.sharedGroupID))
+    private func currentEntry() -> ProductivityWidgetEntry {
+        let snapshot = WidgetSummaryStorage.activeSnapshot(from: WidgetSummaryStorage.sharedDefaults)
         return ProductivityWidgetEntry(summary: WidgetTimelineEntry(date: .now, snapshot: snapshot))
     }
 }
 
 struct ProductivityWidget: Widget {
-    let kind = "ProductivityWidget"
-
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: ProductivityWidgetProvider()) { entry in
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Time Tracker")
-                    .font(.headline)
-                HStack(alignment: .firstTextBaseline, spacing: 16) {
-                    total(title: "Today", seconds: entry.summary.todaySeconds)
-                    total(title: "This week", seconds: entry.summary.weekSeconds)
-                }
-                Spacer(minLength: 0)
-                if let updatedAt = entry.summary.updatedAt {
-                    Text("Updated \(updatedAt, style: .relative) ago")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("Open the app to record time")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding()
-            .containerBackground(.background, for: .widget)
+        StaticConfiguration(kind: WidgetSummaryStorage.widgetKind, provider: ProductivityWidgetProvider()) { entry in
+            ProductivityWidgetView(summary: entry.summary)
         }
         .configurationDisplayName("Time recorded")
         .description("See your recorded time for today and this week.")
         .supportedFamilies([.systemSmall, .systemMedium])
+    }
+}
+
+private struct ProductivityWidgetView: View {
+    let summary: WidgetTimelineEntry
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Time Tracker")
+                .font(.headline)
+            HStack(alignment: .firstTextBaseline, spacing: 16) {
+                total(title: "Today", seconds: summary.todaySeconds)
+                total(title: "This week", seconds: summary.weekSeconds)
+            }
+            Spacer(minLength: 0)
+            Group {
+                if let updatedAt = summary.updatedAt {
+                    Text("Updated \(updatedAt, style: .relative) ago")
+                } else {
+                    Text("Open the app to record time")
+                }
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+        .containerBackground(.background, for: .widget)
     }
 
     private func total(title: String, seconds: Int) -> some View {
