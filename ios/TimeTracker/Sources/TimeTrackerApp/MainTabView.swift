@@ -1,0 +1,84 @@
+import SwiftUI
+
+struct MainTabView: View {
+    private enum Tab: Hashable {
+        case log
+        case timer
+        case analytics
+        case profile
+    }
+
+    let session: AuthSession
+    let token: String
+    let user: APIUser
+    @State private var model: TimerHomeModel
+    @State private var selectedTab = Tab.timer
+    @Environment(\.scenePhase) private var scenePhase
+
+    init(
+        session: AuthSession,
+        token: String,
+        user: APIUser,
+        timerStore: any TimerStoreProtocol,
+        liveActivity: LiveActivityController
+    ) {
+        self.session = session
+        self.token = token
+        self.user = user
+        _model = State(initialValue: TimerHomeModel(
+            api: session.api,
+            token: token,
+            userID: user.id,
+            timerStore: timerStore,
+            categories: CategoryStore(api: session.api, token: token),
+            liveActivity: liveActivity,
+            onAuthenticationExpired: session.expireSession
+        ))
+    }
+
+    var body: some View {
+        TabView(selection: $selectedTab) {
+            NavigationStack {
+                ActivityLogView(logs: model.logs, api: session.api, token: token)
+            }
+            .tabItem { Label("Log", systemImage: "list.bullet.rectangle") }
+            .tag(Tab.log)
+
+            NavigationStack {
+                TimerView(model: model)
+            }
+            .tabItem { Label("Timer", systemImage: "timer") }
+            .tag(Tab.timer)
+
+            NavigationStack {
+                AnalyticsView(logs: model.logs, categories: model.categories.categories)
+            }
+            .tabItem { Label("Analytics", systemImage: "chart.bar") }
+            .tag(Tab.analytics)
+
+            NavigationStack {
+                ProfileAndCategoriesView(
+                    api: session.api,
+                    token: token,
+                    user: user,
+                    categories: model.categories,
+                    onDisplayNameChanged: session.updateDisplayName
+                )
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Sign out", action: session.signOut)
+                    }
+                }
+            }
+            .tabItem { Label("Profile", systemImage: "person.crop.circle") }
+            .tag(Tab.profile)
+        }
+        .tint(.orange)
+        .task { await model.load() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                Task { await model.refreshRemoteData() }
+            }
+        }
+    }
+}
