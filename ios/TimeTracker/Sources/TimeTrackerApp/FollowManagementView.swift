@@ -9,10 +9,10 @@ final class FollowManagementModel {
     private(set) var following: [FollowingUser] = []
     private(set) var isSearching = false
     private(set) var isLoadingFollowing = false
-    private(set) var isUpdatingUserID: UUID?
+    private(set) var updatingUserID: UUID?
     private(set) var hasSearched = false
+    private(set) var errorMessage: String?
     var username = ""
-    var errorMessage: String?
 
     init(api: TrackerAPIClient, token: String) {
         self.api = api
@@ -47,61 +47,42 @@ final class FollowManagementModel {
         }
     }
 
-    func toggleFollow(_ user: SocialUser) async {
-        isUpdatingUserID = user.id
+    func setFollowing(_ shouldFollow: Bool, userID: UUID) async {
+        updatingUserID = userID
         errorMessage = nil
-        defer { isUpdatingUserID = nil }
+        defer { updatingUserID = nil }
         do {
-            if user.isFollowing {
-                try await api.unfollow(userID: user.id, accessToken: token)
+            if shouldFollow {
+                try await api.follow(userID: userID, accessToken: token)
             } else {
-                try await api.follow(userID: user.id, accessToken: token)
+                try await api.unfollow(userID: userID, accessToken: token)
             }
-            if let index = results.firstIndex(where: { $0.id == user.id }) {
-                results[index] = SocialUser(
-                    id: user.id,
-                    username: user.username,
-                    displayName: user.displayName,
-                    isFollowing: !user.isFollowing
-                )
+            if let index = results.firstIndex(where: { $0.id == userID }) {
+                results[index].isFollowing = shouldFollow
             }
             await loadFollowing()
         } catch {
-            errorMessage = user.isFollowing ? "Could not unfollow this account. Try again." : "Could not follow this account. Try again."
+            errorMessage = shouldFollow ? "Could not follow this account. Try again." : "Could not unfollow this account. Try again."
         }
     }
 }
 
 struct FollowManagementView: View {
-    @State private var model: FollowManagementModel?
-    let api: TrackerAPIClient
-    let token: String
+    @State private var model: FollowManagementModel
 
-    var body: some View {
-        Group {
-            if let model {
-                content(model)
-                    .task { await model.loadFollowing() }
-            } else {
-                ProgressView("Opening people")
-                    .task { model = FollowManagementModel(api: api, token: token) }
-            }
-        }
-        .navigationTitle("People")
+    init(api: TrackerAPIClient, token: String) {
+        _model = State(initialValue: FollowManagementModel(api: api, token: token))
     }
 
-    private func content(_ model: FollowManagementModel) -> some View {
+    var body: some View {
         List {
             Section("Find people") {
                 HStack(spacing: 10) {
-                    TextField("Username", text: Binding(
-                        get: { model.username },
-                        set: { model.username = $0 }
-                    ))
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .submitLabel(.search)
-                    .onSubmit { Task { await model.search() } }
+                    TextField("Username", text: $model.username)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .submitLabel(.search)
+                        .onSubmit { Task { await model.search() } }
 
                     Button(model.isSearching ? "Searching" : "Search") {
                         Task { await model.search() }
@@ -117,22 +98,13 @@ struct FollowManagementView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(model.results) { user in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(user.displayName)
-                                    .font(.headline)
-                                Text("@\(user.username)")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer(minLength: 8)
-                            Button(model.isUpdatingUserID == user.id ? "Saving" : (user.isFollowing ? "Following" : "Follow")) {
-                                Task { await model.toggleFollow(user) }
+                        PersonRow(displayName: user.displayName, username: user.username) {
+                            Button(followButtonTitle(for: user)) {
+                                Task { await model.setFollowing(!user.isFollowing, userID: user.id) }
                             }
                             .frame(minWidth: 82, minHeight: 44)
-                            .disabled(model.isUpdatingUserID != nil)
+                            .disabled(model.updatingUserID != nil)
                         }
-                        .accessibilityElement(children: .contain)
                     }
                 }
             }
@@ -145,29 +117,13 @@ struct FollowManagementView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(model.following) { user in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(user.displayName)
-                                    .font(.headline)
-                                Text("@\(user.username)")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
+                        PersonRow(displayName: user.displayName, username: user.username) {
                             Button("Unfollow") {
-                                Task {
-                                    await model.toggleFollow(SocialUser(
-                                        id: user.id,
-                                        username: user.username,
-                                        displayName: user.displayName,
-                                        isFollowing: true
-                                    ))
-                                }
+                                Task { await model.setFollowing(false, userID: user.id) }
                             }
                             .frame(minWidth: 82, minHeight: 44)
-                            .disabled(model.isUpdatingUserID != nil)
+                            .disabled(model.updatingUserID != nil)
                         }
-                        .accessibilityElement(children: .contain)
                     }
                 }
             }
@@ -181,5 +137,33 @@ struct FollowManagementView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .navigationTitle("People")
+        .task { await model.loadFollowing() }
+    }
+
+    private func followButtonTitle(for user: SocialUser) -> String {
+        if model.updatingUserID == user.id { return "Saving" }
+        return user.isFollowing ? "Following" : "Follow"
+    }
+}
+
+private struct PersonRow<Action: View>: View {
+    let displayName: String
+    let username: String
+    @ViewBuilder let action: Action
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(displayName)
+                    .font(.headline)
+                Text("@\(username)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            action
+        }
+        .accessibilityElement(children: .contain)
     }
 }
