@@ -9,36 +9,39 @@ struct ProductivitySummaryView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Recorded time")
                 .font(.headline)
-                .fixedSize(horizontal: false, vertical: true)
-            if !hasRecordedLogs {
-                Text("Completed timers will appear here.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            } else {
-                VStack(alignment: .leading, spacing: 12) {
-                    total(title: "All time", seconds: summary.allTimeSeconds, includesDays: true)
-                    total(title: "Today", seconds: summary.todaySeconds, includesDays: false)
-                    total(title: "This week", seconds: summary.weekSeconds, includesDays: false)
-                }
+            if hasRecordedLogs {
+                total(title: "All time", seconds: summary.allTimeSeconds, includesDays: true)
+                total(title: "Today", seconds: summary.todaySeconds, includesDays: false)
+                total(title: "This week", seconds: summary.weekSeconds, includesDays: false)
                 if !summary.categorySeconds.isEmpty {
                     Divider()
-                    ForEach(summary.categorySeconds.keys.sorted(by: { $0.uuidString < $1.uuidString }), id: \.self) { categoryID in
+                    ForEach(categoryTotals, id: \.id) { category in
                         HStack {
-                            Text(categoryName(for: categoryID))
+                            Text(category.name)
                                 .lineLimit(1)
                             Spacer(minLength: 8)
-                            Text(AnalyticsDurationFormatter.format(summary.categorySeconds[categoryID] ?? 0, includesDays: false))
+                            Text(AnalyticsDurationFormatter.format(category.seconds, includesDays: false))
                                 .monospacedDigit()
                         }
                         .font(.subheadline)
                     }
                 }
+            } else {
+                Text("Completed timers will appear here.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .fixedSize(horizontal: false, vertical: true)
-        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+        .cardStyle(padding: 16, cornerRadius: 16)
+    }
+
+    /// This week's categories, most time first.
+    private var categoryTotals: [(id: UUID, name: String, seconds: Int)] {
+        summary.categorySeconds
+            .map { id, seconds in
+                (id, categories.first { $0.id == id }?.name ?? "Uncategorized", seconds)
+            }
+            .sorted { $0.seconds != $1.seconds ? $0.seconds > $1.seconds : $0.name < $1.name }
     }
 
     private func total(title: String, seconds: Int, includesDays: Bool) -> some View {
@@ -48,12 +51,6 @@ struct ProductivitySummaryView: View {
                 .foregroundStyle(.secondary)
             Text(AnalyticsDurationFormatter.format(seconds, includesDays: includesDays))
                 .font(.body.weight(.semibold).monospacedDigit())
-                .fixedSize(horizontal: false, vertical: true)
-                .lineLimit(nil)
         }
-    }
-
-    private func categoryName(for id: UUID) -> String {
-        categories.first(where: { $0.id == id })?.name ?? "Uncategorized"
     }
 }
