@@ -10,7 +10,7 @@ final class SocialFeedModel {
     private(set) var isLoading = false
     private(set) var isLoadingMore = false
     private(set) var hasLoaded = false
-    var errorMessage: String?
+    private(set) var errorMessage: String?
 
     init(api: TrackerAPIClient, token: String) {
         self.api = api
@@ -46,29 +46,23 @@ final class SocialFeedModel {
         }
     }
 
-    func refresh() async {
-        guard !isLoading else { return }
-        nextCursor = nil
-        await loadFirstPage()
-    }
 }
 
 struct SocialFeedView: View {
-    @State private var model: SocialFeedModel?
-    let api: TrackerAPIClient
-    let token: String
+    @State private var model: SocialFeedModel
+    private let api: TrackerAPIClient
+    private let token: String
+
+    init(api: TrackerAPIClient, token: String) {
+        self.api = api
+        self.token = token
+        _model = State(initialValue: SocialFeedModel(api: api, token: token))
+    }
 
     var body: some View {
-        Group {
-            if let model {
-                feedContent(model)
-                    .task { await model.loadFirstPage() }
-            } else {
-                ProgressView("Opening your activity feed")
-                    .task { model = SocialFeedModel(api: api, token: token) }
-            }
-        }
-        .navigationTitle("Activity")
+        content
+            .task { await model.loadFirstPage() }
+            .navigationTitle("Activity")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink {
@@ -82,7 +76,7 @@ struct SocialFeedView: View {
     }
 
     @ViewBuilder
-    private func feedContent(_ model: SocialFeedModel) -> some View {
+    private var content: some View {
         if model.isLoading && !model.hasLoaded {
             ProgressView("Loading activity")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -96,22 +90,24 @@ struct SocialFeedView: View {
                     .frame(minHeight: 44)
             }
         } else if model.entries.isEmpty {
-            VStack(spacing: 16) {
-                ContentUnavailableView(
-                    "No activity yet",
-                    systemImage: "clock",
-                    description: Text("Follow people to see their public and friends-only activity here.")
-                )
-                NavigationLink {
-                    FollowManagementView(api: api, token: token)
-                } label: {
-                    Text("Find people")
-                        .frame(minWidth: 120, minHeight: 44)
+            // An empty List keeps pull-to-refresh available behind the empty state.
+            List {}
+                .overlay {
+                    ContentUnavailableView {
+                        Label("No activity yet", systemImage: "clock")
+                    } description: {
+                        Text("Follow people to see their public and friends-only activity here.")
+                    } actions: {
+                        NavigationLink {
+                            FollowManagementView(api: api, token: token)
+                        } label: {
+                            Text("Find people")
+                                .frame(minWidth: 120, minHeight: 44)
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
                 }
-                .buttonStyle(.borderedProminent)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .refreshable { await model.refresh() }
+                .refreshable { await model.loadFirstPage() }
         } else {
             List {
                 ForEach(model.entries) { entry in
@@ -128,7 +124,7 @@ struct SocialFeedView: View {
                         .frame(maxWidth: .infinity)
                         .listRowSeparator(.hidden)
                 }
-                if let errorMessage = model.errorMessage, !model.entries.isEmpty {
+                if let errorMessage = model.errorMessage {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(errorMessage)
                         Button("Retry") { Task { await model.loadMore() } }
@@ -138,7 +134,7 @@ struct SocialFeedView: View {
                 }
             }
             .listStyle(.plain)
-            .refreshable { await model.refresh() }
+            .refreshable { await model.loadFirstPage() }
         }
     }
 }
