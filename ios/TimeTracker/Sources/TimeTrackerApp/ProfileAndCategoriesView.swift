@@ -3,45 +3,65 @@ import SwiftUI
 @MainActor
 @Observable
 final class ProfileAndCategoriesModel {
-    private let api: TrackerAPIClient
-    private let token: String
-    private let onDisplayNameChanged: (String) -> Void
-    private(set) var profile: APIProfile
-    private(set) var categories: [APICategory] = []
-    private(set) var isLoading = false
-    private(set) var isSavingProfile = false
-    private(set) var isCreatingCategory = false
-    var displayName: String
-    var categoryName = ""
-    var errorMessage: String?
-    private(set) var failedOperation: FailedOperation?
-    var successMessage: String?
-
-    enum FailedOperation {
+    enum Operation {
         case loadCategories
         case saveProfile
         case createCategory
+
+        var retryTitle: String {
+            switch self {
+            case .loadCategories: "Retry loading categories"
+            case .saveProfile: "Retry saving profile"
+            case .createCategory: "Retry adding category"
+            }
+        }
     }
 
-    init(api: TrackerAPIClient, token: String, user: APIUser, onDisplayNameChanged: @escaping (String) -> Void) {
+    let categories: CategoryStore
+    private let api: TrackerAPIClient
+    private let token: String
+    private let onDisplayNameChanged: (String) -> Void
+    private(set) var profile: APIUser
+    private(set) var isSavingProfile = false
+    private(set) var failedOperation: Operation?
+    private(set) var errorMessage: String?
+    private(set) var successMessage: String?
+    var displayName: String
+    var categoryName = ""
+
+    init(
+        api: TrackerAPIClient,
+        token: String,
+        user: APIUser,
+        categories: CategoryStore,
+        onDisplayNameChanged: @escaping (String) -> Void
+    ) {
         self.api = api
         self.token = token
+        self.categories = categories
         self.onDisplayNameChanged = onDisplayNameChanged
-        profile = APIProfile(id: user.id, username: user.username, displayName: user.displayName, email: user.email, avatarUrl: user.avatarUrl)
+        profile = user
         displayName = user.displayName
     }
 
-    func load() async {
-        guard !isLoading else { return }
-        isLoading = true
-        errorMessage = nil
-        failedOperation = nil
-        defer { isLoading = false }
+    var isBusy: Bool {
+        categories.isLoading || categories.isCreating || isSavingProfile
+    }
+
+    var canAddCategory: Bool {
+        !categories.isCreating && !trimmedCategoryName.isEmpty
+    }
+
+    private var trimmedCategoryName: String {
+        categoryName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func loadCategories() async {
+        beginOperation()
         do {
-            categories = try await api.categories(accessToken: token)
+            try await categories.reload()
         } catch {
-            errorMessage = "Categories could not be loaded. Check your connection and try again."
-            failedOperation = .loadCategories
+            fail(.loadCategories, "Categories could not be loaded. Check your connection and try again.")
         }
     }
 
@@ -51,10 +71,8 @@ final class ProfileAndCategoriesModel {
             errorMessage = "Display name cannot be empty."
             return
         }
+        beginOperation()
         isSavingProfile = true
-        errorMessage = nil
-        failedOperation = nil
-        successMessage = nil
         defer { isSavingProfile = false }
         do {
             profile = try await api.updateProfile(displayName: trimmed, accessToken: token)
@@ -62,149 +80,147 @@ final class ProfileAndCategoriesModel {
             onDisplayNameChanged(profile.displayName)
             successMessage = "Profile saved."
         } catch {
-            errorMessage = "Profile could not be saved. Check your connection and try again."
-            failedOperation = .saveProfile
+            fail(.saveProfile, "Profile could not be saved. Check your connection and try again.")
         }
     }
 
     func addCategory() async {
-        let name = categoryName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = trimmedCategoryName
         guard !name.isEmpty else {
             errorMessage = "Enter a category name."
             return
         }
-        isCreatingCategory = true
-        errorMessage = nil
-        failedOperation = nil
-        successMessage = nil
-        defer { isCreatingCategory = false }
+        beginOperation()
         do {
-            let category = try await api.createCategory(name: name, accessToken: token)
-            categories.append(category)
+            _ = try await categories.create(named: name)
             categoryName = ""
             successMessage = "Category added."
         } catch ProfileClientError.duplicateCategory {
-            errorMessage = "A category with that name already exists."
-            failedOperation = .createCategory
+            fail(.createCategory, "A category with that name already exists.")
         } catch {
-            errorMessage = "Category could not be added. Check your connection and try again."
-            failedOperation = .createCategory
+            fail(.createCategory, "Category could not be added. Check your connection and try again.")
         }
+    }
+
+    func retryFailedOperation() async {
+        switch failedOperation {
+        case .loadCategories: await loadCategories()
+        case .saveProfile: await saveProfile()
+        case .createCategory: await addCategory()
+        case nil: break
+        }
+    }
+
+    private func beginOperation() {
+        errorMessage = nil
+        successMessage = nil
+        failedOperation = nil
+    }
+
+    private func fail(_ operation: Operation, _ message: String) {
+        failedOperation = operation
+        errorMessage = message
     }
 }
 
 struct ProfileAndCategoriesView: View {
-    let api: TrackerAPIClient
-    let token: String
-    let user: APIUser
-    var onDisplayNameChanged: (String) -> Void = { _ in }
-    @State private var model: ProfileAndCategoriesModel?
+    @State private var model: ProfileAndCategoriesModel
+
+    init(
+        api: TrackerAPIClient,
+        token: String,
+        user: APIUser,
+        categories: CategoryStore,
+        onDisplayNameChanged: @escaping (String) -> Void
+    ) {
+        _model = State(initialValue: ProfileAndCategoriesModel(
+            api: api,
+            token: token,
+            user: user,
+            categories: categories,
+            onDisplayNameChanged: onDisplayNameChanged
+        ))
+    }
 
     var body: some View {
-        Group {
-            if let model {
-                Form {
-                    Section("Profile") {
-                        LabeledContent("Username", value: "@\(model.profile.username)")
-                        LabeledContent("Email", value: model.profile.email)
-                        TextField("Display name", text: Binding(
-                            get: { model.displayName },
-                            set: { model.displayName = $0 }
-                        ))
-                            .textContentType(.name)
-                            .submitLabel(.done)
-                        Button(model.isSavingProfile ? "Saving" : "Save display name") {
-                            Task { await model.saveProfile() }
-                        }
-                        .disabled(model.isSavingProfile)
-                    }
+        Form {
+            Section("Profile") {
+                LabeledContent("Username", value: "@\(model.profile.username)")
+                LabeledContent("Email", value: model.profile.email)
+                TextField("Display name", text: $model.displayName)
+                    .textContentType(.name)
+                    .submitLabel(.done)
+                Button(model.isSavingProfile ? "Saving" : "Save display name") {
+                    Task { await model.saveProfile() }
+                }
+                .disabled(model.isSavingProfile)
+            }
 
-                    Section("Categories") {
-                        if model.isLoading {
-                            ProgressView("Loading categories")
-                        } else if model.categories.isEmpty {
-                            ContentUnavailableView("No categories yet", systemImage: "tag", description: Text("Add a category to organize your activity.").font(.body))
-                        } else {
-                            ForEach(model.categories) { category in
-                                HStack(spacing: 12) {
-                                    Circle()
-                                        .fill(Color(hex: category.colorHex))
-                                        .frame(width: 12, height: 12)
-                                        .accessibilityHidden(true)
-                                    Text(category.name)
-                                    Spacer()
-                                }
-                                .accessibilityElement(children: .combine)
-                            }
-                        }
+            Section("Categories") {
+                if model.categories.isLoading && model.categories.categories.isEmpty {
+                    ProgressView("Loading categories")
+                } else if model.categories.categories.isEmpty {
+                    ContentUnavailableView(
+                        "No categories yet",
+                        systemImage: "tag",
+                        description: Text("Add a category to organize your activity.")
+                    )
+                } else {
+                    ForEach(model.categories.categories) { category in
                         HStack(spacing: 12) {
-                            TextField("Category name", text: Binding(
-                                get: { model.categoryName },
-                                set: { model.categoryName = $0 }
-                            ))
-                                .textInputAutocapitalization(.words)
-                                .submitLabel(.done)
-                                .onSubmit { Task { await model.addCategory() } }
-                            Button(model.isCreatingCategory ? "Adding" : "Add") {
-                                Task { await model.addCategory() }
-                            }
-                            .frame(minWidth: 52, minHeight: 44)
-                            .disabled(model.isCreatingCategory || model.categoryName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        }
-                    }
-
-                    if let successMessage = model.successMessage {
-                        Section {
-                            Label(successMessage, systemImage: "checkmark.circle")
-                                .foregroundStyle(.primary)
-                        }
-                    }
-                    if let errorMessage = model.errorMessage {
-                        Section("Could not complete action") {
-                            Text(errorMessage)
-                            Button(retryTitle(for: model.failedOperation)) {
-                                Task {
-                                    switch model.failedOperation {
-                                    case .loadCategories: await model.load()
-                                    case .saveProfile: await model.saveProfile()
-                                    case .createCategory: await model.addCategory()
-                                    case nil: break
-                                    }
-                                }
-                            }
-                            .frame(minHeight: 44)
-                            .disabled(model.isLoading || model.isSavingProfile || model.isCreatingCategory)
+                            Circle()
+                                .fill(Color(hex: category.colorHex))
+                                .frame(width: 12, height: 12)
+                                .accessibilityHidden(true)
+                            Text(category.name)
                         }
                     }
                 }
-                .navigationTitle("Profile")
-                .task { await model.load() }
-            } else {
-                ProgressView("Opening profile")
-                    .task { model = ProfileAndCategoriesModel(api: api, token: token, user: user, onDisplayNameChanged: onDisplayNameChanged) }
+                HStack(spacing: 12) {
+                    TextField("Category name", text: $model.categoryName)
+                        .textInputAutocapitalization(.words)
+                        .submitLabel(.done)
+                        .onSubmit { Task { await model.addCategory() } }
+                    Button(model.categories.isCreating ? "Adding" : "Add") {
+                        Task { await model.addCategory() }
+                    }
+                    .frame(minWidth: 52, minHeight: 44)
+                    .disabled(!model.canAddCategory)
+                }
+            }
+
+            if let successMessage = model.successMessage {
+                Section {
+                    Label(successMessage, systemImage: "checkmark.circle")
+                }
+            }
+            if let errorMessage = model.errorMessage {
+                Section("Could not complete action") {
+                    Text(errorMessage)
+                    if let operation = model.failedOperation {
+                        Button(operation.retryTitle) {
+                            Task { await model.retryFailedOperation() }
+                        }
+                        .frame(minHeight: 44)
+                        .disabled(model.isBusy)
+                    }
+                }
             }
         }
-    }
-
-    private func retryTitle(for operation: ProfileAndCategoriesModel.FailedOperation?) -> String {
-        switch operation {
-        case .loadCategories: "Retry loading categories"
-        case .saveProfile: "Retry saving profile"
-        case .createCategory: "Retry adding category"
-        case nil: "Retry"
-        }
+        .navigationTitle("Profile")
+        .task { await model.loadCategories() }
     }
 }
 
 private extension Color {
+    /// Parses `#RRGGBB`; malformed values render black.
     init(hex: String) {
         let value = UInt64(hex.dropFirst(), radix: 16) ?? 0
         self.init(
             .sRGB,
             red: Double((value >> 16) & 0xFF) / 255,
             green: Double((value >> 8) & 0xFF) / 255,
-            blue: Double(value & 0xFF) / 255,
-            opacity: 1
+            blue: Double(value & 0xFF) / 255
         )
     }
 }
