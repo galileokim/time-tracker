@@ -40,5 +40,5 @@ if [[ "$HOST_GROUP" != "$WIDGET_GROUP" || "$HOST_GROUP" != "group.com.galileotim
 fi
 
 xcrun simctl install "$DEVICE_ID" "$APP"
-xcrun simctl launch "$DEVICE_ID" com.timetracker.app
+xcrun simctl launch "$DEVICE_ID" com.galileotimetracker.app
 printf 'PASS: host app launches with embedded WidgetKit extension on simulator %s\n' "$DEVICE_ID"
